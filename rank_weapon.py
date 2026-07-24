@@ -62,7 +62,7 @@ def set_guild_mode(guild_id: int, mode: str):
 # --- 状態表示の埋め込みメッセージ生成（見やすく整理） ---
 def build_status_embed(guild_id: int):
     embed = discord.Embed(title="カスタムマッチ エントリーパネル", color=0x2f3136)
-    embed.description = "参加状況を確認・管理できます。下のボタンやメニューから操作してください。"
+    embed.description = "管理"
     
     participants = get_guild_participants(guild_id)
     active_list = []
@@ -116,7 +116,7 @@ class RegistrationView(discord.ui.View):
                 child.options = get_member_select_options(guild_id)
 
     @discord.ui.select(
-        placeholder="💎 自分のランクを選択",
+        placeholder="ランクを選択",
         options=[
             discord.SelectOption(label="🟣 レインボー", value="レインボー"),
             discord.SelectOption(label="🔴 クリムゾン", value="クリムゾン"),
@@ -140,7 +140,7 @@ class RegistrationView(discord.ui.View):
         await interaction.response.edit_message(embed=build_status_embed(guild_id), view=self)
 
     @discord.ui.select(
-        placeholder="🔫 自分の武器を選択",
+        placeholder="武器を選択",
         options=[
             discord.SelectOption(label="アサルトライフル (AR)", value="AR"),
             discord.SelectOption(label="サブマシンガン (SMG)", value="SMG"),
@@ -180,7 +180,7 @@ class RegistrationView(discord.ui.View):
         self.update_member_select(guild_id)
         await interaction.response.edit_message(embed=build_status_embed(guild_id), view=self)
 
-    @discord.ui.button(label="JOIN / AFK 切替", style=discord.ButtonStyle.blurple, custom_id="btn_afk")
+    @discord.ui.button(label="JOIN / AFK", style=discord.ButtonStyle.blurple, custom_id="btn_afk")
     async def toggle_afk(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_id = interaction.guild_id
         participants = get_guild_participants(guild_id)
