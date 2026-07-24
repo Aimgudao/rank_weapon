@@ -372,23 +372,29 @@ async def cmd_custom_match(interaction: discord.Interaction):
     view = RegistrationView(guild_id)
     await interaction.response.send_message(embed=embed, view=view)
 
-# --- Renderのスリープ防止用簡易Webサーバー ---
+# --- Renderのスリープ防止用簡易Webサーバー ＆ Bot起動まとめ ---
 from flask import Flask
 import threading
+import os
 
 app = Flask(__name__)
 
-@app.route('/')
+
+@app.route("/")
 def home():
-    return "Bot is running!"
+  return "Bot is running!"
+
 
 def run_web():
-    # Renderが指定するポート（環境変数 PORT）を使用する（デフォルトは10000）
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+  port = int(os.environ.get("PORT", 10000))
+  app.run(host="0.0.0.0", port=port, debug=False)
 
-# 別スレッドでWebサーバーを起動
-threading.Thread(target=run_web).daemon = True
-# ---------------------------------------------
 
-bot.run(TOKEN)
+if __name__ == "__main__":
+  # 1. まずFlaskサーバーを別スレッドで完全に独立して起動させる
+  web_thread = threading.Thread(target=run_web)
+  web_thread.daemon = True
+  web_thread.start()
+
+  # 2. その後、Discordボットを起動する
+  bot.run(TOKEN)
