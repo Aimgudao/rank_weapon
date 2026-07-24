@@ -92,7 +92,7 @@ def get_member_select_options(guild_id: int):
     
     options = []
     for uid, data in participants.items():
-        action_text = " [JOIN ➔ AFKへ]" if not data["is_afk"] else " [AFK ➔ JOINへ]"
+        action_text = " [JOIN ➔ AFK]" if not data["is_afk"] else " [AFK ➔ JOIN]"
         label = f"{data['name']} {action_text}"
         if len(label) > 100:
             label = label[:97] + "..."
@@ -144,7 +144,7 @@ class RegistrationView(discord.ui.View):
         options=[
             discord.SelectOption(label="アサルトライフル (AR)", value="AR"),
             discord.SelectOption(label="サブマシンガン (SMG)", value="SMG"),
-            discord.SelectOption(label="Flex (AR/SMG)", value="Flex"),
+            discord.SelectOption(label="フレックス (AR/SMG)", value="Flex"),
             discord.SelectOption(label="スナイパー (SR)", value="SR")
         ],
         custom_id="select_weapon"
@@ -180,7 +180,7 @@ class RegistrationView(discord.ui.View):
         self.update_member_select(guild_id)
         await interaction.response.edit_message(embed=build_status_embed(guild_id), view=self)
 
-    @discord.ui.button(label="🔁 JOIN / AFK 切り替え", style=discord.ButtonStyle.blurple, custom_id="btn_afk")
+    @discord.ui.button(label="JOIN / AFK 切替", style=discord.ButtonStyle.blurple, custom_id="btn_afk")
     async def toggle_afk(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_id = interaction.guild_id
         participants = get_guild_participants(guild_id)
@@ -193,7 +193,7 @@ class RegistrationView(discord.ui.View):
         await interaction.response.edit_message(embed=build_status_embed(guild_id), view=self)
 
     @discord.ui.select(
-        placeholder="リストからメンバーを選択して状態を管理",
+        placeholder="管理",
         options=[discord.SelectOption(label="登録者がいません", value="none")],
         custom_id="toggle_other_afk"
     )
@@ -372,23 +372,29 @@ async def cmd_custom_match(interaction: discord.Interaction):
     view = RegistrationView(guild_id)
     await interaction.response.send_message(embed=embed, view=view)
 
-# --- Renderのスリープ防止用簡易Webサーバー ---
+# --- Renderのスリープ防止用簡易Webサーバー
 from flask import Flask
 import threading
+import os
 
 app = Flask(__name__)
 
-@app.route('/')
+
+@app.route("/")
 def home():
-    return "Bot is running!"
+  return "Bot is running!"
+
 
 def run_web():
-    # Renderが指定するポート（環境変数 PORT）を使用する（デフォルトは10000）
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+  port = int(os.environ.get("PORT", 10000))
+  app.run(host="0.0.0.0", port=port, debug=False)
 
-# 別スレッドでWebサーバーを起動
-threading.Thread(target=run_web).daemon = True
-# ---------------------------------------------
 
-bot.run(TOKEN)
+if __name__ == "__main__":
+  # 1. まずFlaskサーバーを別スレッドで完全に独立して起動させる
+  web_thread = threading.Thread(target=run_web)
+  web_thread.daemon = True
+  web_thread.start()
+
+  # 2. その後、Discordボットを起動する
+  bot.run(TOKEN)
