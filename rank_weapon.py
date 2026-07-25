@@ -29,6 +29,7 @@ WEAPONS = ["AR", "SMG", "Flex", "SR"]
 participants_per_guild = {}
 priority_pool_per_guild = {}
 current_mode_per_guild = {}
+panel_message_ids = {}  # サーバーごとのパネルメッセージIDを保持
 
 
 class CustomMatchBot(commands.Bot):
@@ -74,12 +75,21 @@ def set_guild_mode(guild_id: int, mode: str):
   current_mode_per_guild[guild_id] = mode
 
 
-# --- 状態表示の埋め込みメッセージ生成 ---
+# --- 操作パネル用のEmbed生成 ---
+def build_control_embed():
+  return discord.Embed(
+      title="🎮 カスタムマッチ 操作メニュー",
+      description=(
+          "下のメニューやボタンからランク・武器を選んで参加してください。"
+      ),
+      color=0x5865F2,
+  )
+
+
+# --- エントリーパネル用のEmbed生成 ---
 def build_status_embed(guild_id: int):
   embed = discord.Embed(
-      title="カスタムマッチ エントリーパネル",
-      description="下のメニューやボタンからランク・武器を選んで参加してください。",
-      color=0x2f3136,
+      title="📋 カスタムマッチ エントリーパネル", color=0x2F3136
   )
 
   participants = get_guild_participants(guild_id)
@@ -89,7 +99,6 @@ def build_status_embed(guild_id: int):
   for uid, data in participants.items():
     ps_str = "🎮【PS】" if data["is_ps"] else ""
     rank_info = RANKS.get(data["rank"], {"color": "⚪"})
-
     entry = f"{rank_info['color']} **{data['name']}** [ {data['weapon']} ] {ps_str}"
 
     if data["is_afk"]:
@@ -98,19 +107,19 @@ def build_status_embed(guild_id: int):
       active_list.append(entry)
 
   embed.add_field(
-      name=f"JOIN ({len(active_list)}人)",
+      name=f"🟢 JOIN ({len(active_list)}人)",
       value="\n".join(active_list) if active_list else "なし",
       inline=False,
   )
   embed.add_field(
-      name=f"AFK ({len(afk_list)}人)",
+      name=f"🟡 AFK ({len(afk_list)}人)",
       value="\n".join(afk_list) if afk_list else "なし",
       inline=False,
   )
   return embed
 
 
-# --- セレクトメニューの選択肢を動적生成 ---
+# --- セレクトメニューの選択肢を動的生成 ---
 def get_member_select_options(guild_id: int):
   participants = get_guild_participants(guild_id)
   if not participants:
@@ -130,6 +139,36 @@ def get_member_select_options(guild_id: int):
   return options
 
 
+# --- パネル全体の更新処理（2つのメッセージを更新） ---
+async def update_panels(interaction: discord.Interaction):
+  guild_id = interaction.guild_id
+  participants = get_guild_participants(guild_id)
+
+  # Viewのセレクトメニュー選択肢を更新
+  view = interaction.view
+  if isinstance(view, RegistrationView):
+    view.update_member_select(guild_id)
+
+  # 1. 操作メニュー（自分自身のメッセージ）を更新
+  try:
+    await interaction.response.edit_message(
+        embed=build_control_embed(), view=view
+    )
+  except discord.InteractionResponded:
+    # 既にレスポンス済みの場合は何もしない
+    pass
+
+  # 2. 下にあるエントリーパネルのメッセージを更新
+  if guild_id in panel_message_ids:
+    try:
+      channel = interaction.channel
+      msg_id = panel_message_ids[guild_id]
+      status_msg = await channel.fetch_message(msg_id)
+      await status_msg.edit(embed=build_status_embed(guild_id))
+    except (discord.NotFound, discord.HTTPException):
+      pass
+
+
 # --- 登録用インタラクティブUI ---
 class RegistrationView(discord.ui.View):
 
@@ -146,7 +185,6 @@ class RegistrationView(discord.ui.View):
       ):
         child.options = get_member_select_options(guild_id)
 
-  # 1. ランクを選択
   @discord.ui.select(
       placeholder="ランクを選択",
       options=[
@@ -176,12 +214,8 @@ class RegistrationView(discord.ui.View):
     else:
       participants[uid]["rank"] = select.values[0]
 
-    self.update_member_select(guild_id)
-    await interaction.response.edit_message(
-        embed=build_status_embed(guild_id), view=self
-    )
+    await update_panels(interaction)
 
-  # 2. 武器を選択
   @discord.ui.select(
       placeholder="武器を選択",
       options=[
@@ -210,12 +244,8 @@ class RegistrationView(discord.ui.View):
     else:
       participants[uid]["weapon"] = select.values[0]
 
-    self.update_member_select(guild_id)
-    await interaction.response.edit_message(
-        embed=build_status_embed(guild_id), view=self
-    )
+    await update_panels(interaction)
 
-  # 3. PlayStationで参加
   @discord.ui.button(
       label="PlayStationで参加 (OFF)",
       style=discord.ButtonStyle.gray,
@@ -243,12 +273,8 @@ class RegistrationView(discord.ui.View):
     button.label = "PlayStationで参加 (ON)" if is_ps else "PlayStationで参加 (OFF)"
     button.style = discord.ButtonStyle.green if is_ps else discord.ButtonStyle.gray
 
-    self.update_member_select(guild_id)
-    await interaction.response.edit_message(
-        embed=build_status_embed(guild_id), view=self
-    )
+    await update_panels(interaction)
 
-  # 4. Active/AFK切り替え
   @discord.ui.button(
       label="Active / AFK",
       style=discord.ButtonStyle.blurple,
@@ -264,12 +290,8 @@ class RegistrationView(discord.ui.View):
     if uid in participants:
       participants[uid]["is_afk"] = not participants[uid]["is_afk"]
 
-    self.update_member_select(guild_id)
-    await interaction.response.edit_message(
-        embed=build_status_embed(guild_id), view=self
-    )
+    await update_panels(interaction)
 
-  # 5. チームを編成開始ボタン
   @discord.ui.button(
       label="チームを編成",
       style=discord.ButtonStyle.red,
@@ -283,7 +305,6 @@ class RegistrationView(discord.ui.View):
         "チーム分け基準を選択してください：", view=view, ephemeral=True
     )
 
-  # 6. 管理（セレクトメニュー）
   @discord.ui.select(
       placeholder="管理",
       options=[discord.SelectOption(label="登録者がいません", value="none")],
@@ -305,11 +326,7 @@ class RegistrationView(discord.ui.View):
       participants[target_uid]["is_afk"] = not participants[target_uid][
           "is_afk"
       ]
-
-      self.update_member_select(guild_id)
-      await interaction.response.edit_message(
-          embed=build_status_embed(guild_id), view=self
-      )
+      await update_panels(interaction)
     else:
       await interaction.response.defer()
 
@@ -429,7 +446,7 @@ async def execute_team_split(channel, mode):
       else:
         team_b.append(chunk[0])
 
-  embed = discord.Embed(title="チーム分け結果", color=0x5865f2)
+  embed = discord.Embed(title="チーム分け結果", color=0x5865F2)
 
   def format_team(team_list):
     lines = []
@@ -495,9 +512,20 @@ async def cmd_custom_match(interaction: discord.Interaction):
   participants.clear()
   set_guild_priority(guild_id, [])
 
-  embed = build_status_embed(guild_id)
+  # 1つ目：操作メニュー（上に表示）
+  control_embed = build_control_embed()
   view = RegistrationView(guild_id)
-  await interaction.response.send_message(embed=embed, view=view)
+  await interaction.response.send_message(embed=control_embed, view=view)
+
+  # 送信されたメッセージのオブジェクトを取得
+  control_msg = await interaction.original_response()
+
+  # 2つ目：エントリーパネル（下に表示）
+  status_embed = build_status_embed(guild_id)
+  status_msg = await interaction.channel.send(embed=status_embed)
+
+  # エントリーパネルのメッセージIDを保存（更新用）
+  panel_message_ids[guild_id] = status_msg.id
 
 
 # --- Renderのスリープ防止用簡易Webサーバー ---
