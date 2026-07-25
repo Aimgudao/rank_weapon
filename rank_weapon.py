@@ -78,18 +78,19 @@ def set_guild_mode(guild_id: int, mode: str):
   current_mode_per_guild[guild_id] = mode
 
 
-# --- 操作パネル用のEmbed生成 ---
+# --- 操作パネル用のEmbed生成（タイトル削除） ---
 def build_control_embed():
   return discord.Embed(
-      title="",
+      description="",
       color=0x5865F2,
   )
 
 
-# --- エントリーパネル ＆ チーム結果を統合したEmbed生成 ---
+# --- エントリーパネル ＆ チーム結果を統合したEmbed生成（タイトル削除） ---
 def build_status_embed(guild_id: int):
   embed = discord.Embed(
-      title="", color=0x2F3136
+      description="",
+      color=0x2F3136,
   )
 
   participants = get_guild_participants(guild_id)
@@ -100,7 +101,6 @@ def build_status_embed(guild_id: int):
     ps_str = "🎮【PS】" if data["is_ps"] else ""
     rank_info = RANKS.get(data["rank"], {"color": "⚪"})
     
-    # リスト内の絵文字（ステータス絵文字）を削除してシンプルに
     entry = f"{rank_info['color']} **{data['name']}** [ {data['weapon']} ] {ps_str}"
 
     if data["is_afk"]:
@@ -109,12 +109,12 @@ def build_status_embed(guild_id: int):
       active_list.append(entry)
 
   embed.add_field(
-      name=f"JOIN ({len(active_list)}人)",
+      name=f"🟢 JOIN ({len(active_list)}人)",
       value="\n".join(active_list) if active_list else "なし",
       inline=False,
   )
   embed.add_field(
-      name=f"AFK ({len(afk_list)}人)",
+      name=f"🟡 AFK ({len(afk_list)}人)",
       value="\n".join(afk_list) if afk_list else "なし",
       inline=False,
   )
@@ -153,7 +153,6 @@ class RegistrationView(discord.ui.View):
         is_ps_on = participants[user_id].get("is_ps", False)
 
       for child in self.children:
-        # 1. PlayStationボタンの状態（ラベル・色）
         if isinstance(child, discord.ui.Button) and child.custom_id == "btn_ps":
           if is_ps_on:
             child.label = "PlayStationで参加 (ON)"
@@ -162,15 +161,14 @@ class RegistrationView(discord.ui.View):
             child.label = "PlayStationで参加 (OFF)"
             child.style = discord.ButtonStyle.gray
 
-        # 2. 管理用セレクトメニューの選択肢を確実に構築
         elif isinstance(child, discord.ui.Select) and child.custom_id == "toggle_other_afk":
           if not participants:
             child.options = [discord.SelectOption(label="登録者がいません", value="none")]
           else:
             options = []
             for uid, data in participants.items():
-              state_text = "AFK" if data["is_afk"] else "Active"
-              action_text = "→Active" if data["is_afk"] else "→AFK"
+              state_text = "AFK中" if data["is_afk"] else "Active中"
+              action_text = "→Activeにする" if data["is_afk"] else "→AFKにする"
               label = f"{data['name']} ({state_text} {action_text})"
               if len(label) > 100:
                 label = label[:97] + "..."
@@ -304,7 +302,7 @@ class RegistrationView(discord.ui.View):
     )
 
   @discord.ui.select(
-      placeholder="管理",
+      placeholder="管理 (メンバーのAFK切り替え)",
       options=[discord.SelectOption(label="登録者がいません", value="none")],
       custom_id="toggle_other_afk",
   )
@@ -329,7 +327,6 @@ class RegistrationView(discord.ui.View):
 
 # --- パネル全体を更新する共通関数 ---
 async def refresh_panels(interaction: discord.Interaction, guild_id: int):
-  # 1. 下にあるエントリーパネル（ステータス表示メッセージ）を最新データで確実に更新
   if guild_id in panel_message_ids:
     try:
       msg_id = panel_message_ids[guild_id]
@@ -340,7 +337,6 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
     except (discord.NotFound, discord.HTTPException):
       pass
 
-  # 2. 操作メニュー側のビューを、最新の参加者データ・ステータスで完全に再生成して反映
   new_view = RegistrationView(guild_id, interaction.user.id)
   try:
     if interaction.response.is_done():
