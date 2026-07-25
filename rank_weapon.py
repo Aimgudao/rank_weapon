@@ -110,12 +110,12 @@ def build_status_embed(guild_id: int):
       active_list.append(entry)
 
   embed.add_field(
-      name=f"🟢 JOIN ({len(active_list)}人)",
+      name=f"JOIN ({len(active_list)}人)",
       value="\n".join(active_list) if active_list else "なし",
       inline=False,
   )
   embed.add_field(
-      name=f"🟡 AFK ({len(afk_list)}人)",
+      name=f"AFK ({len(afk_list)}人)",
       value="\n".join(afk_list) if afk_list else "なし",
       inline=False,
   )
