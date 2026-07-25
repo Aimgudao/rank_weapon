@@ -105,16 +105,30 @@ def build_status_embed(guild_id: int):
       inline=False,
   )
 
-  # 2. AFKメンバーのvalueの先頭に改行を入れてスペースを作る
-  afk_value = "\n".join(afk_list) if afk_list else "なし"
+  # 2. JOINとAFKの間に空のフィールドを挟んでスペースを作る
+  embed.add_field(
+      name="\u200b",
+      value="\u200b",
+      inline=False,
+  )
+
+  # 3. AFKメンバーをフィールドに追加
   embed.add_field(
       name=f"AFK ({len(afk_list)}人)",
-      value=f"\n{afk_value}",
+      value="\n".join(afk_list) if afk_list else "なし",
       inline=False,
   )
 
   if guild_id in latest_teams_per_guild:
     team_data = latest_teams_per_guild[guild_id]
+    
+    # チーム分けの前にもスペースを入れると綺麗に見えます
+    embed.add_field(
+        name="\u200b",
+        value="\u200b",
+        inline=False,
+    )
+    
     embed.add_field(
         name="🟦 チームA",
         value=team_data["team_a_str"] if team_data["team_a_str"] else "なし",
