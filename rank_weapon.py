@@ -30,6 +30,7 @@ participants_per_guild = {}
 priority_pool_per_guild = {}
 current_mode_per_guild = {}
 panel_message_ids = {}  # サーバーごとのパネルメッセージIDを保持
+latest_teams_per_guild = {}  # サーバーごとの直近のチーム分け結果を保持
 
 
 class CustomMatchBot(commands.Bot):
@@ -43,7 +44,7 @@ class CustomMatchBot(commands.Bot):
 
   async def setup_hook(self):
     self.add_view(RegistrationView())
-    self.add_view(RematchView())
+    self.add_view(PersistentRematchView())
     await self.tree.sync()
 
 
@@ -86,7 +87,7 @@ def build_control_embed():
   )
 
 
-# --- エントリーパネル用のEmbed生成 ---
+# --- エントリーパネル ＆ チーム結果を統合したEmbed生成 ---
 def build_status_embed(guild_id: int):
   embed = discord.Embed(
       title="📋 カスタムマッチ エントリーパネル", color=0x2F3136
@@ -116,6 +117,27 @@ def build_status_embed(guild_id: int):
       value="\n".join(afk_list) if afk_list else "なし",
       inline=False,
   )
+
+  # 直近のチーム分け結果があればここに統合表示する
+  if guild_id in latest_teams_per_guild:
+    team_data = latest_teams_per_guild[guild_id]
+    embed.add_field(
+        name="🟦 チームA",
+        value=team_data["team_a_str"] if team_data["team_a_str"] else "なし",
+        inline=False,
+    )
+    embed.add_field(
+        name="🟥 チームB",
+        value=team_data["team_b_str"] if team_data["team_b_str"] else "なし",
+        inline=False,
+    )
+    if team_data["excluded_user"]:
+      embed.add_field(
+          name="キャスター",
+          value=f"<@{team_data['excluded_user']}>さん(次回優先)",
+          inline=False,
+      )
+
   return embed
 
 
@@ -139,33 +161,30 @@ def get_member_select_options(guild_id: int):
   return options
 
 
-# --- パネル全体の更新処理（2つのメッセージを更新） ---
-async def update_panels(interaction: discord.Interaction):
-  guild_id = interaction.guild_id
-  participants = get_guild_participants(guild_id)
-
-  # Viewのセレクトメニュー選択肢を更新
-  view = interaction.view
-  if isinstance(view, RegistrationView):
-    view.update_member_select(guild_id)
-
-  # 1. 操作メニュー（自分自身のメッセージ）を更新
-  try:
-    await interaction.response.edit_message(
-        embed=build_control_embed(), view=view
-    )
-  except discord.InteractionResponded:
-    # 既にレスポンス済みの場合は何もしない
-    pass
-
-  # 2. 下にあるエントリーパネルのメッセージを更新
+# --- 画面全体（操作メニュー ＆ エントリーパネル）を更新する関数 ---
+async def refresh_panels(channel, guild_id: int, interaction=None):
+  # 1. 下にあるエントリーパネル（チーム結果含む）を更新
   if guild_id in panel_message_ids:
     try:
-      channel = interaction.channel
       msg_id = panel_message_ids[guild_id]
       status_msg = await channel.fetch_message(msg_id)
-      await status_msg.edit(embed=build_status_embed(guild_id))
+      await status_msg.edit(
+          embed=build_status_embed(guild_id), view=PersistentRematchView()
+      )
     except (discord.NotFound, discord.HTTPException):
+      pass
+
+  # 2. 操作メニュー側もインタラクションがあれば更新
+  if interaction:
+    view = interaction.view
+    if isinstance(view, RegistrationView):
+      view.update_member_select(guild_id)
+    try:
+      if not interaction.response.is_done():
+        await interaction.response.edit_message(
+            embed=build_control_embed(), view=view
+        )
+    except discord.InteractionResponded:
       pass
 
 
@@ -214,7 +233,7 @@ class RegistrationView(discord.ui.View):
     else:
       participants[uid]["rank"] = select.values[0]
 
-    await update_panels(interaction)
+    await refresh_panels(interaction.channel, guild_id, interaction)
 
   @discord.ui.select(
       placeholder="武器を選択",
@@ -244,7 +263,7 @@ class RegistrationView(discord.ui.View):
     else:
       participants[uid]["weapon"] = select.values[0]
 
-    await update_panels(interaction)
+    await refresh_panels(interaction.channel, guild_id, interaction)
 
   @discord.ui.button(
       label="PlayStationで参加 (OFF)",
@@ -273,7 +292,7 @@ class RegistrationView(discord.ui.View):
     button.label = "PlayStationで参加 (ON)" if is_ps else "PlayStationで参加 (OFF)"
     button.style = discord.ButtonStyle.green if is_ps else discord.ButtonStyle.gray
 
-    await update_panels(interaction)
+    await refresh_panels(interaction.channel, guild_id, interaction)
 
   @discord.ui.button(
       label="Active / AFK",
@@ -290,7 +309,7 @@ class RegistrationView(discord.ui.View):
     if uid in participants:
       participants[uid]["is_afk"] = not participants[uid]["is_afk"]
 
-    await update_panels(interaction)
+    await refresh_panels(interaction.channel, guild_id, interaction)
 
   @discord.ui.button(
       label="チームを編成",
@@ -326,7 +345,7 @@ class RegistrationView(discord.ui.View):
       participants[target_uid]["is_afk"] = not participants[target_uid][
           "is_afk"
       ]
-      await update_panels(interaction)
+      await refresh_panels(interaction.channel, guild_id, interaction)
     else:
       await interaction.response.defer()
 
@@ -369,14 +388,16 @@ class MatchModeView(discord.ui.View):
     await self.run_matchmaking(interaction, "random")
 
 
-# --- 再戦・再シャッフル用UI ---
-class RematchView(discord.ui.View):
+# --- 再編成ボタン（エントリーパネルに常駐用） ---
+class PersistentRematchView(discord.ui.View):
 
   def __init__(self):
     super().__init__(timeout=None)
 
   @discord.ui.button(
-      label="再編成", style=discord.ButtonStyle.green, custom_id="btn_rematch"
+      label="再編成",
+      style=discord.ButtonStyle.green,
+      custom_id="persistent_btn_rematch",
   )
   async def rematch(
       self, interaction: discord.Interaction, button: discord.ui.Button
@@ -387,7 +408,7 @@ class RematchView(discord.ui.View):
     await execute_team_split(interaction.channel, current_mode)
 
 
-# --- チーム分けロジック & VC移動 ---
+# --- チーム分けロジック & パネル上書き更新 ---
 async def execute_team_split(channel, mode):
   guild = channel.guild
   guild_id = guild.id
@@ -397,7 +418,7 @@ async def execute_team_split(channel, mode):
   pool = [uid for uid, data in participants.items() if not data["is_afk"]]
 
   if len(pool) < 2:
-    await channel.send("参加者が足りません (最低2人必要)")
+    await channel.send("参加者が足りません (最低2人必要)", delete_after=5)
     return
 
   excluded_user = None
@@ -446,8 +467,6 @@ async def execute_team_split(channel, mode):
       else:
         team_b.append(chunk[0])
 
-  embed = discord.Embed(title="チーム分け結果", color=0x5865F2)
-
   def format_team(team_list):
     lines = []
     for uid in team_list:
@@ -457,20 +476,27 @@ async def execute_team_split(channel, mode):
       lines.append(f"{rc} <@{uid}> [{d['weapon']}] {ps}")
     return "\n".join(lines) if lines else "なし"
 
-  embed.add_field(name="🟦 チームA", value=format_team(team_a), inline=False)
-  embed.add_field(name="🟥 チームB", value=format_team(team_b), inline=False)
+  # チーム結果をグローバル変数に保存
+  latest_teams_per_guild[guild_id] = {
+      "team_a_str": format_team(team_a),
+      "team_b_str": format_team(team_b),
+      "excluded_user": excluded_user,
+  }
 
-  if excluded_user:
-    embed.add_field(
-        name="キャスター", value=f"<@{excluded_user}>さん(次回優先)", inline=False
-    )
-
-  await channel.send(embed=embed, view=RematchView())
+  # エントリーパネルのメッセージを編集して、チャット欄を流さないように結果を反映
+  if guild_id in panel_message_ids:
+    try:
+      msg_id = panel_message_ids[guild_id]
+      status_msg = await channel.fetch_message(msg_id)
+      await status_msg.edit(
+          embed=build_status_embed(guild_id), view=PersistentRematchView()
+      )
+    except (discord.NotFound, discord.HTTPException):
+      pass
 
   # --- VC移動処理 ---
   voice_channels = sorted(guild.voice_channels, key=lambda c: c.position)
   if len(voice_channels) < 2:
-    await channel.send("移動先のボイスチャンネルが2つ以上見つかりません。")
     return
 
   vc_a = voice_channels[0]
@@ -498,7 +524,7 @@ async def execute_team_split(channel, mode):
   if ps_users_to_notify:
     mentions = " ".join([f"{m.mention}" for m, _ in ps_users_to_notify])
     notice_text = f"{mentions} PlayStationで参加中の方は手動で指定のボイスチャンネルへ移動してください。"
-    await channel.send(content=notice_text, tts=True)
+    await channel.send(content=notice_text, delete_after=15)
 
 
 # --- /カスタムマッチ コマンド ---
@@ -511,28 +537,30 @@ async def cmd_custom_match(interaction: discord.Interaction):
   participants = get_guild_participants(guild_id)
   participants.clear()
   set_guild_priority(guild_id, [])
+  if guild_id in latest_teams_per_guild:
+    del latest_teams_per_guild[guild_id]
 
   # 1つ目：操作メニュー（上に表示）
   control_embed = build_control_embed()
   view = RegistrationView(guild_id)
   await interaction.response.send_message(embed=control_embed, view=view)
 
-  # 送信されたメッセージのオブジェクトを取得
-  control_msg = await interaction.original_response()
-
-  # 2つ目：エントリーパネル（下に表示）
+  # 2つ目：エントリーパネル ＋ 結果（下に表示）
   status_embed = build_status_embed(guild_id)
-  status_msg = await interaction.channel.send(embed=status_embed)
+  status_msg = await interaction.channel.send(
+      embed=status_embed, view=PersistentRematchView()
+  )
 
-  # エントリーパネルのメッセージIDを保存（更新用）
+  # メッセージIDを保持
   panel_message_ids[guild_id] = status_msg.id
 
 
 # --- Renderのスリープ防止用簡易Webサーバー ---
 from flask import Flask
 import threading
-import os
+import app
 
+# (既存のFlaskサーバー処理)
 app = Flask(__name__)
 
 
