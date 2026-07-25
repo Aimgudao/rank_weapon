@@ -78,21 +78,8 @@ def set_guild_mode(guild_id: int, mode: str):
   current_mode_per_guild[guild_id] = mode
 
 
-# --- 操作パネル用のEmbed生成（タイトル削除） ---
-def build_control_embed():
-  return discord.Embed(
-      description="",
-      color=0x5865F2,
-  )
-
-
-# --- エントリーパネル ＆ チーム結果を統合したEmbed生成（タイトル削除） ---
-def build_status_embed(guild_id: int):
-  embed = discord.Embed(
-      description="",
-      color=0x2F3136,
-  )
-
+# --- エントリーパネル ＆ チーム結果をテキストで生成 ---
+def build_status_text(guild_id: int):
   participants = get_guild_participants(guild_id)
   active_list = []
   afk_list = []
@@ -108,37 +95,33 @@ def build_status_embed(guild_id: int):
     else:
       active_list.append(entry)
 
-  embed.add_field(
-      name=f"🟢 JOIN ({len(active_list)}人)",
-      value="\n".join(active_list) if active_list else "なし",
-      inline=False,
-  )
-  embed.add_field(
-      name=f"🟡 AFK ({len(afk_list)}人)",
-      value="\n".join(afk_list) if afk_list else "なし",
-      inline=False,
-  )
+  lines = []
+  lines.append(f"**🟢 JOIN ({len(active_list)}人)**")
+  if active_list:
+    lines.extend(active_list)
+  else:
+    lines.append("なし")
+
+  lines.append("")
+  lines.append(f"**🟡 AFK ({len(afk_list)}人)**")
+  if afk_list:
+    lines.extend(afk_list)
+  else:
+    lines.append("なし")
 
   if guild_id in latest_teams_per_guild:
     team_data = latest_teams_per_guild[guild_id]
-    embed.add_field(
-        name="🟦 チームA",
-        value=team_data["team_a_str"] if team_data["team_a_str"] else "なし",
-        inline=False,
-    )
-    embed.add_field(
-        name="🟥 チームB",
-        value=team_data["team_b_str"] if team_data["team_b_str"] else "なし",
-        inline=False,
-    )
+    lines.append("")
+    lines.append("**🟦 チームA**")
+    lines.append(team_data["team_a_str"] if team_data["team_a_str"] else "なし")
+    lines.append("")
+    lines.append("**🟥 チームB**")
+    lines.append(team_data["team_b_str"] if team_data["team_b_str"] else "なし")
     if team_data["excluded_user"]:
-      embed.add_field(
-          name="キャスター",
-          value=f"<@{team_data['excluded_user']}>さん(次回優先)",
-          inline=False,
-      )
+      lines.append("")
+      lines.append(f"**キャスター**: <@{team_data['excluded_user']}>さん(次回優先)")
 
-  return embed
+  return "\n".join(lines)
 
 
 # --- 動的にボタン状態や選択肢を調整するビュークラス ---
@@ -332,7 +315,7 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
       msg_id = panel_message_ids[guild_id]
       status_msg = await interaction.channel.fetch_message(msg_id)
       await status_msg.edit(
-          embed=build_status_embed(guild_id), view=PersistentRematchView()
+          content=build_status_text(guild_id), view=PersistentRematchView()
       )
     except (discord.NotFound, discord.HTTPException):
       pass
@@ -340,9 +323,9 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
   new_view = RegistrationView(guild_id, interaction.user.id)
   try:
     if interaction.response.is_done():
-      await interaction.edit_original_response(embed=build_control_embed(), view=new_view)
+      await interaction.edit_original_response(content="操作メニュー", view=new_view)
     else:
-      await interaction.response.edit_message(embed=build_control_embed(), view=new_view)
+      await interaction.response.edit_message(content="操作メニュー", view=new_view)
   except discord.HTTPException:
     pass
 
@@ -486,7 +469,7 @@ async def execute_team_split(channel, mode):
       msg_id = panel_message_ids[guild_id]
       status_msg = await channel.fetch_message(msg_id)
       await status_msg.edit(
-          embed=build_status_embed(guild_id), view=PersistentRematchView()
+          content=build_status_text(guild_id), view=PersistentRematchView()
       )
     except (discord.NotFound, discord.HTTPException):
       pass
@@ -537,13 +520,12 @@ async def cmd_custom_match(interaction: discord.Interaction):
   if guild_id in latest_teams_per_guild:
     del latest_teams_per_guild[guild_id]
 
-  control_embed = build_control_embed()
   view = RegistrationView(guild_id, interaction.user.id)
-  await interaction.response.send_message(embed=control_embed, view=view)
+  await interaction.response.send_message(content="操作メニュー", view=view)
 
-  status_embed = build_status_embed(guild_id)
+  status_text = build_status_text(guild_id)
   status_msg = await interaction.channel.send(
-      embed=status_embed, view=PersistentRematchView()
+      content=status_text, view=PersistentRematchView()
   )
 
   panel_message_ids[guild_id] = status_msg.id
