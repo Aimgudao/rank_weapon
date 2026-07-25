@@ -61,15 +61,15 @@ def set_guild_mode(guild_id: int, mode: str):
 
 # --- 状態表示の埋め込みメッセージ生成（見やすく整理） ---
 def build_status_embed(guild_id: int):
-    embed = discord.Embed(title="カスタムマッチ エントリーパネル", color=0x2f3136)
-    embed.description = "管理"
+    embed = discord.Embed(title="", color=0x2f3136)
+    embed.description = ""
     
     participants = get_guild_participants(guild_id)
     active_list = []
     afk_list = []
     
     for uid, data in participants.items():
-        ps_str = "【PS】" if data["is_ps"] else ""
+        ps_str = "🎮【PS】" if data["is_ps"] else ""
         rank_info = RANKS.get(data["rank"], {"color": "⚪"})
         
         # 視認性を高めたフォーマット
