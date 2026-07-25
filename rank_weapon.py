@@ -78,22 +78,8 @@ def set_guild_mode(guild_id: int, mode: str):
   current_mode_per_guild[guild_id] = mode
 
 
-# --- 操作パネル用のEmbed生成（ゼロ幅スペースでエラー回避） ---
-def build_control_embed():
-  embed = discord.Embed(
-      description="\u200b",
-      color=0x5865F2,
-  )
-  return embed
-
-
-# --- エントリーパネル ＆ チーム結果を統合したEmbed生成（ゼロ幅スペースでエラー回避） ---
+# --- 参加者一覧・チーム結果のEmbed生成（タイトルにJOIN人数を表示） ---
 def build_status_embed(guild_id: int):
-  embed = discord.Embed(
-      description="\u200b",
-      color=0x2F3136,
-  )
-
   participants = get_guild_participants(guild_id)
   active_list = []
   afk_list = []
@@ -109,8 +95,15 @@ def build_status_embed(guild_id: int):
     else:
       active_list.append(entry)
 
+  # タイトルに人数を動的に反映
+  embed = discord.Embed(
+      title=f"📋 JOIN ({len(active_list)}人)",
+      description="\u200b",
+      color=0x2F3136,
+  )
+
   embed.add_field(
-      name=f"🟢 JOIN ({len(active_list)}人)",
+      name=f"🟢 参加メンバー",
       value="\n".join(active_list) if active_list else "なし",
       inline=False,
   )
@@ -341,9 +334,9 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
   new_view = RegistrationView(guild_id, interaction.user.id)
   try:
     if interaction.response.is_done():
-      await interaction.edit_original_response(embed=build_control_embed(), view=new_view)
+      await interaction.edit_original_response(content="\u200b", view=new_view)
     else:
-      await interaction.response.edit_message(embed=build_control_embed(), view=new_view)
+      await interaction.response.edit_message(content="\u200b", view=new_view)
   except discord.HTTPException:
     pass
 
@@ -538,9 +531,8 @@ async def cmd_custom_match(interaction: discord.Interaction):
   if guild_id in latest_teams_per_guild:
     del latest_teams_per_guild[guild_id]
 
-  control_embed = build_control_embed()
   view = RegistrationView(guild_id, interaction.user.id)
-  await interaction.response.send_message(embed=control_embed, view=view)
+  await interaction.response.send_message(content="\u200b", view=view)
 
   status_embed = build_status_embed(guild_id)
   status_msg = await interaction.channel.send(
