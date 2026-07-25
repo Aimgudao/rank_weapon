@@ -81,7 +81,7 @@ def set_guild_mode(guild_id: int, mode: str):
 # --- 操作パネル用のEmbed生成 ---
 def build_control_embed():
   return discord.Embed(
-      title="🎮 カスタムマッチ 操作メニュー",
+      title="",
       color=0x5865F2,
   )
 
@@ -89,7 +89,7 @@ def build_control_embed():
 # --- エントリーパネル ＆ チーム結果を統合したEmbed生成 ---
 def build_status_embed(guild_id: int):
   embed = discord.Embed(
-      title="📋 カスタムマッチ エントリーパネル", color=0x2F3136
+      title="", color=0x2F3136
   )
 
   participants = get_guild_participants(guild_id)
@@ -109,12 +109,12 @@ def build_status_embed(guild_id: int):
       active_list.append(entry)
 
   embed.add_field(
-      name=f"🟢 JOIN ({len(active_list)}人)",
+      name=f"JOIN ({len(active_list)}人)",
       value="\n".join(active_list) if active_list else "なし",
       inline=False,
   )
   embed.add_field(
-      name=f"🟡 AFK ({len(afk_list)}人)",
+      name=f"AFK ({len(afk_list)}人)",
       value="\n".join(afk_list) if afk_list else "なし",
       inline=False,
   )
@@ -169,8 +169,8 @@ class RegistrationView(discord.ui.View):
           else:
             options = []
             for uid, data in participants.items():
-              state_text = "AFK中" if data["is_afk"] else "Active中"
-              action_text = "→Activeにする" if data["is_afk"] else "→AFKにする"
+              state_text = "AFK" if data["is_afk"] else "Active"
+              action_text = "→Active" if data["is_afk"] else "→AFK"
               label = f"{data['name']} ({state_text} {action_text})"
               if len(label) > 100:
                 label = label[:97] + "..."
@@ -304,7 +304,7 @@ class RegistrationView(discord.ui.View):
     )
 
   @discord.ui.select(
-      placeholder="管理 (メンバーのAFK切り替え)",
+      placeholder="管理",
       options=[discord.SelectOption(label="登録者がいません", value="none")],
       custom_id="toggle_other_afk",
   )
