@@ -78,7 +78,7 @@ def set_guild_mode(guild_id: int, mode: str):
   current_mode_per_guild[guild_id] = mode
 
 
-# --- 参加者一覧・チーム結果のEmbed生成（タイトルにJOIN人数を表示） ---
+# --- 参加者一覧・チーム結果のEmbed生成（説明文に人数を表示し重複フィールドを削除） ---
 def build_status_embed(guild_id: int):
   participants = get_guild_participants(guild_id)
   active_list = []
@@ -95,18 +95,14 @@ def build_status_embed(guild_id: int):
     else:
       active_list.append(entry)
 
-  # タイトルに人数を動的に反映
+  # 説明文の最上部にJOIN人数を表示（タイトルなし）
+  desc_text = f"🟢 **JOIN ({len(active_list)}人)**\n" + ("\n".join(active_list) if active_list else "なし")
+
   embed = discord.Embed(
-      title=f"📋 JOIN ({len(active_list)}人)",
-      description="\u200b",
+      description=desc_text,
       color=0x2F3136,
   )
 
-  embed.add_field(
-      name=f"🟢 参加メンバー",
-      value="\n".join(active_list) if active_list else "なし",
-      inline=False,
-  )
   embed.add_field(
       name=f"🟡 AFK ({len(afk_list)}人)",
       value="\n".join(afk_list) if afk_list else "なし",
