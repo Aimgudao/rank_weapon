@@ -163,7 +163,6 @@ class RegistrationView(discord.ui.View):
       if user_id and user_id in participants:
         is_ps_on = participants[user_id].get("is_ps", False)
 
-      # 各ボタン・セレクトの動的ラベル調整
       for child in self.children:
         if isinstance(child, discord.ui.Button):
           if child.custom_id == "btn_ps":
