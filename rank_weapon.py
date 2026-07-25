@@ -102,7 +102,10 @@ def build_status_embed(guild_id: int):
   for uid, data in participants.items():
     ps_str = "🎮【PS】" if data["is_ps"] else ""
     rank_info = RANKS.get(data["rank"], {"color": "⚪"})
-    entry = f"{rank_info['color']} **{data['name']}** [ {data['weapon']} ] {ps_str}"
+    
+    # ActiveかAFKかでステータス表記にマークを付けるなどわかりやすく区別
+    status_mark = "🟡" if data["is_afk"] else "🟢"
+    entry = f"{status_mark} {rank_info['color']} **{data['name']}** [ {data['weapon']} ] {ps_str}"
 
     if data["is_afk"]:
       afk_list.append(entry)
@@ -171,8 +174,9 @@ class RegistrationView(discord.ui.View):
             options = []
             for uid, data in participants.items():
               # 現在の状態に応じて次に切り替わるラベルを表示
-              status_label = "[AFKにする]" if not data["is_afk"] else "[Activeにする]"
-              label = f"{data['name']} {status_label}"
+              state_text = "AFK中" if data["is_afk"] else "Active中"
+              action_text = "→Activeにする" if data["is_afk"] else "→AFKにする"
+              label = f"{data['name']} ({state_text} {action_text})"
               if len(label) > 100:
                 label = label[:97] + "..."
               options.append(discord.SelectOption(label=label, value=str(uid)))
@@ -281,13 +285,12 @@ class RegistrationView(discord.ui.View):
     if uid in participants:
       participants[uid]["is_afk"] = not participants[uid]["is_afk"]
     else:
-      # 未登録の状態でボタンを押した場合の安全な新規登録
       participants[uid] = {
           "name": interaction.user.display_name,
           "rank": "ゴールド",
           "weapon": "AR",
           "is_ps": False,
-          "is_afk": True,  # ボタンで切り替えたのでAFKスタート等、お好みで調整可能
+          "is_afk": True,
       }
 
     await refresh_panels(interaction, guild_id)
@@ -323,7 +326,6 @@ class RegistrationView(discord.ui.View):
 
     target_uid = int(selected_val)
     if target_uid in participants:
-      # 反転させる
       participants[target_uid]["is_afk"] = not participants[target_uid]["is_afk"]
       await refresh_panels(interaction, guild_id)
     else:
@@ -332,7 +334,7 @@ class RegistrationView(discord.ui.View):
 
 # --- パネル全体を更新する共通関数 ---
 async def refresh_panels(interaction: discord.Interaction, guild_id: int):
-  # 1. 下にあるエントリーパネルを更新
+  # 1. 下にあるエントリーパネル（ステータス表示メッセージ）を最新データで確実に更新
   if guild_id in panel_message_ids:
     try:
       msg_id = panel_message_ids[guild_id]
@@ -343,7 +345,7 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
     except (discord.NotFound, discord.HTTPException):
       pass
 
-  # 2. 操作メニュー側のビューを、最新の参加者データで完全に再生成して反映
+  # 2. 操作メニュー側のビューを、最新の参加者データ・ステータスで完全に再生成して反映
   new_view = RegistrationView(guild_id, interaction.user.id)
   try:
     if interaction.response.is_done():
