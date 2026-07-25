@@ -108,7 +108,7 @@ def build_status_embeds(guild_id: int):
 
   # 1. JOINパネル（ダークグレー: 0x2F3136）
   embed_join = discord.Embed(
-      title=f"🟦 JOIN ({len(active_list)}人)",
+      title=f"JOIN ({len(active_list)}人)",
       description="\n".join(active_list) if active_list else "なし",
       color=0x2F3136,
   )
@@ -117,7 +117,7 @@ def build_status_embeds(guild_id: int):
   # 2. AFKパネル（メンバーがいる場合のみ追加 / ダークグレー: 0x2F3136）
   if afk_list:
     embed_afk = discord.Embed(
-        title=f"🟥 AFK ({len(afk_list)}人)",
+        title=f"AFK ({len(afk_list)}人)",
         description="\n".join(afk_list),
         color=0x2F3136,
     )
@@ -143,7 +143,7 @@ def build_status_embeds(guild_id: int):
 
     if team_data["excluded_user"]:
       embed_caster = discord.Embed(
-          title="🎙️ キャスター",
+          title="キャスター",
           description=f"{team_data['excluded_name']}さん (次回優先)",
           color=0x2F3136,
       )
