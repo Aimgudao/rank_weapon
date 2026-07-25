@@ -94,7 +94,7 @@ def build_status_embed(guild_id: int):
     else:
       active_list.append(entry)
 
-  # JOINリストの最後とAFKの間にスペース（空行）を作る
+  # JOINリストの最後とAFKの間にスペース（空行）をしっかり確保
   active_content = "\n".join(active_list) if active_list else "なし"
   desc_text = f"**JOIN ({len(active_list)}人)**\n{active_content}\n\n\n"
 
