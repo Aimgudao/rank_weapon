@@ -110,12 +110,12 @@ def build_status_embed(guild_id: int):
       active_list.append(entry)
 
   embed.add_field(
-      name=f"JOIN ({len(active_list)}人)",
+      name=f"🟢 JOIN ({len(active_list)}人)",
       value="\n".join(active_list) if active_list else "なし",
       inline=False,
   )
   embed.add_field(
-      name=f"AFK ({len(afk_list)}人)",
+      name=f"🟡 AFK ({len(afk_list)}人)",
       value="\n".join(afk_list) if afk_list else "なし",
       inline=False,
   )
@@ -143,7 +143,7 @@ def build_status_embed(guild_id: int):
   return embed
 
 
-# --- セレクトメニューの選択肢を動的生成 ---
+# --- セレクトメニューの選択肢を動적生成 ---
 def get_member_select_options(guild_id: int):
   participants = get_guild_participants(guild_id)
   if not participants:
@@ -151,8 +151,8 @@ def get_member_select_options(guild_id: int):
 
   options = []
   for uid, data in participants.items():
-    action_text = " [Active ➔ AFK]" if not data["is_afk"] else " [AFK ➔ Active]"
-    label = f"{data['name']} {action_text}"
+    status_label = "[AFKにする]" if not data["is_afk"] else "[Activeにする]"
+    label = f"{data['name']} {status_label}"
     if len(label) > 100:
       label = label[:97] + "..."
     options.append(discord.SelectOption(label=label, value=str(uid)))
@@ -163,9 +163,28 @@ def get_member_select_options(guild_id: int):
   return options
 
 
+# --- ビューのボタン状態をユーザーデータに合わせて同期するヘルパー ---
+def sync_registration_view_items(view, guild_id: int, user_id: int):
+  # 管理用セレクトメニューの選択肢を最新に更新
+  for child in view.children:
+    if isinstance(child, discord.ui.Select) and child.custom_id == "toggle_other_afk":
+      child.options = get_member_select_options(guild_id)
+
+  # 自身のPSボタンの状態を同期
+  participants = get_guild_participants(guild_id)
+  data = participants.get(user_id)
+  for child in view.children:
+    if isinstance(child, discord.ui.Button) and child.custom_id == "btn_ps":
+      if data and data.get("is_ps", False):
+        child.label = "PlayStationで参加 (ON)"
+        child.style = discord.ButtonStyle.green
+      else:
+        child.label = "PlayStationで参加 (OFF)"
+        child.style = discord.ButtonStyle.gray
+
+
 # --- 画面全体（操作メニュー ＆ エントリーパネル）を安全に更新する関数 ---
 async def refresh_panels(channel, guild_id: int, interaction: discord.Interaction):
-  # タイムアウトを防ぐため最初に応答を保留（defer）する
   if not interaction.response.is_done():
     await interaction.response.defer()
 
@@ -184,7 +203,7 @@ async def refresh_panels(channel, guild_id: int, interaction: discord.Interactio
   try:
     view = interaction.view
     if isinstance(view, RegistrationView):
-      view.update_member_select(guild_id)
+      sync_registration_view_items(view, guild_id, interaction.user.id)
     await interaction.edit_original_response(
         embed=build_control_embed(), view=view
     )
@@ -195,18 +214,10 @@ async def refresh_panels(channel, guild_id: int, interaction: discord.Interactio
 # --- 登録用インタラクティブUI ---
 class RegistrationView(discord.ui.View):
 
-  def __init__(self, guild_id: int = None):
+  def __init__(self, guild_id: int = None, user_id: int = None):
     super().__init__(timeout=None)
     if guild_id:
-      self.update_member_select(guild_id)
-
-  def update_member_select(self, guild_id: int):
-    for child in self.children:
-      if (
-          isinstance(child, discord.ui.Select)
-          and child.custom_id == "toggle_other_afk"
-      ):
-        child.options = get_member_select_options(guild_id)
+      sync_registration_view_items(self, guild_id, user_id)
 
   @discord.ui.select(
       placeholder="ランクを選択",
@@ -292,10 +303,6 @@ class RegistrationView(discord.ui.View):
     else:
       participants[uid]["is_ps"] = not participants[uid]["is_ps"]
 
-    is_ps = participants[uid]["is_ps"]
-    button.label = "PlayStationで参加 (ON)" if is_ps else "PlayStationで参加 (OFF)"
-    button.style = discord.ButtonStyle.green if is_ps else discord.ButtonStyle.gray
-
     await refresh_panels(interaction.channel, guild_id, interaction)
 
   @discord.ui.button(
@@ -329,7 +336,7 @@ class RegistrationView(discord.ui.View):
     )
 
   @discord.ui.select(
-      placeholder="管理",
+      placeholder="管理 (メンバーのAFK切り替え)",
       options=[discord.SelectOption(label="登録者がいません", value="none")],
       custom_id="toggle_other_afk",
   )
@@ -395,7 +402,7 @@ class MatchModeView(discord.ui.View):
     await self.run_matchmaking(interaction, "random")
 
 
-# --- 再編成ボタン（エントリーパネルに常駐用） ---
+# --- 再編成ボタン（エントリーパネルに常駐用・赤） ---
 class PersistentRematchView(discord.ui.View):
 
   def __init__(self):
@@ -403,7 +410,7 @@ class PersistentRematchView(discord.ui.View):
 
   @discord.ui.button(
       label="再編成",
-      style=discord.ButtonStyle.green,
+      style=discord.ButtonStyle.red,
       custom_id="persistent_btn_rematch",
   )
   async def rematch(
@@ -547,7 +554,7 @@ async def cmd_custom_match(interaction: discord.Interaction):
     del latest_teams_per_guild[guild_id]
 
   control_embed = build_control_embed()
-  view = RegistrationView(guild_id)
+  view = RegistrationView(guild_id, interaction.user.id)
   await interaction.response.send_message(embed=control_embed, view=view)
 
   status_embed = build_status_embed(guild_id)
