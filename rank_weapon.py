@@ -94,15 +94,19 @@ def build_status_embed(guild_id: int):
     else:
       active_list.append(entry)
 
-  # JOINとAFKの間に2行ほど（空行2つ＝改行3つ）のスペースを確保
-  active_content = "\n".join(active_list) if active_list else "なし"
-  desc_text = f"**JOIN ({len(active_list)}人)**\n{active_content}\n\n\n"
-
+  # Embed本体（説明文は空または必要に応じて設定）
   embed = discord.Embed(
-      description=desc_text,
       color=0x2F3136,
   )
 
+  # 1. JOINメンバーを独立したフィールドに追加
+  embed.add_field(
+      name=f"JOIN ({len(active_list)}人)",
+      value="\n".join(active_list) if active_list else "なし",
+      inline=False,
+  )
+
+  # 2. AFKメンバーを独立したフィールドに追加
   embed.add_field(
       name=f"AFK ({len(afk_list)}人)",
       value="\n".join(afk_list) if afk_list else "なし",
