@@ -106,38 +106,38 @@ def build_status_embeds(guild_id: int):
 
   embeds = []
 
-  # 1. JOINパネル（青: 0x3498DB）
+  # 1. JOINパネル（ダークグレー: 0x2F3136）
   embed_join = discord.Embed(
       title=f"🟦 JOIN ({len(active_list)}人)",
       description="\n".join(active_list) if active_list else "なし",
-      color=0x3498DB,
+      color=0x2F3136,
   )
   embeds.append(embed_join)
 
-  # 2. AFKパネル（メンバーがいる場合のみ追加 / 赤: 0xE74C3C）
+  # 2. AFKパネル（メンバーがいる場合のみ追加 / ダークグレー: 0x2F3136）
   if afk_list:
     embed_afk = discord.Embed(
         title=f"🟥 AFK ({len(afk_list)}人)",
         description="\n".join(afk_list),
-        color=0xE74C3C,
+        color=0x2F3136,
     )
     embeds.append(embed_afk)
 
-  # 3. チーム分け結果パネル（結果が存在する場合）
+  # 3. チーム分け結果パネル（結果が存在する場合 / ダークグレー: 0x2F3136）
   if guild_id in latest_teams_per_guild:
     team_data = latest_teams_per_guild[guild_id]
     
     embed_team_a = discord.Embed(
         title="🟦 チームA",
         description=team_data["team_a_str"] if team_data["team_a_str"] else "なし",
-        color=0x3498DB,
+        color=0x2F3136,
     )
     embeds.append(embed_team_a)
 
     embed_team_b = discord.Embed(
         title="🟥 チームB",
         description=team_data["team_b_str"] if team_data["team_b_str"] else "なし",
-        color=0xE74C3C,
+        color=0x2F3136,
     )
     embeds.append(embed_team_b)
 
@@ -145,7 +145,7 @@ def build_status_embeds(guild_id: int):
       embed_caster = discord.Embed(
           title="🎙️ キャスター",
           description=f"{team_data['excluded_name']}さん (次回優先)",
-          color=0x95A5A6,
+          color=0x2F3136,
       )
       embeds.append(embed_caster)
 
