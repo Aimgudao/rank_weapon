@@ -78,21 +78,21 @@ def set_guild_mode(guild_id: int, mode: str):
   current_mode_per_guild[guild_id] = mode
 
 
-# --- 操作パネル用のEmbed生成 ---
+# --- 操作パネル用のEmbed生成（タイトルをスペースで隠す） ---
 def build_control_embed():
   embed = discord.Embed(
-      title="🎮 カスタムマッチ操作パネル",
-      description="下のメニューからランク・武器・PS参加・AFKを設定してください。",
+      title=" ",
+      description=" ",
       color=0x5865F2,
   )
   return embed
 
 
-# --- エントリーパネル ＆ チーム結果を統合したEmbed生成 ---
+# --- エントリーパネル ＆ チーム結果を統合したEmbed生成（タイトルをスペースで隠す） ---
 def build_status_embed(guild_id: int):
   embed = discord.Embed(
-      title="📋 参加者一覧 ＆ チーム分け結果",
-      description="現在の参加状況と最新のチーム分けです。",
+      title=" ",
+      description=" ",
       color=0x2F3136,
   )
 
