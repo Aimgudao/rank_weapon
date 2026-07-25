@@ -279,7 +279,7 @@ class RegistrationView(discord.ui.View):
     await refresh_panels(interaction, guild_id)
 
   @discord.ui.button(
-      label="チームを編成 / 再編成",
+      label="チーム編成 / 再編成",
       style=discord.ButtonStyle.red,
       custom_id="btn_match",
   )
@@ -510,6 +510,15 @@ async def execute_team_split(channel, mode, interaction=None):
 )
 async def cmd_custom_match(interaction: discord.Interaction):
   guild_id = interaction.guild_id
+  
+  # 既存のステータスパネルがあれば削除を試みる
+  if guild_id in panel_message_ids:
+    try:
+      old_msg = await interaction.channel.fetch_message(panel_message_ids[guild_id])
+      await old_msg.delete()
+    except (discord.NotFound, discord.HTTPException):
+      pass
+
   participants = get_guild_participants(guild_id)
   participants.clear()
   set_guild_priority(guild_id, [])
@@ -517,7 +526,7 @@ async def cmd_custom_match(interaction: discord.Interaction):
     del latest_teams_per_guild[guild_id]
 
   view = RegistrationView(guild_id, interaction.user.id)
-  await interaction.response.send_message(content="\u200b", view=view)
+  await interaction.response.send_message(content="\u200b", view=view, ephemeral=True)
 
   status_embed = build_status_embed(guild_id)
   status_msg = await interaction.channel.send(
