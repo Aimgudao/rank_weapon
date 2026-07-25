@@ -454,13 +454,12 @@ async def execute_team_split(channel, mode):
       else:
         team_b.append(chunk[0])
 
-  # メンションやPSマークを省き、ランク色と名前だけに整形
+  # ランクアイコンやメンションを省き、名前（太字）だけに整形
   def format_team(team_list):
     lines = []
     for uid in team_list:
       d = participants[uid]
-      rc = RANKS.get(d["rank"], {"color": "⚪"})["color"]
-      lines.append(f"{rc} **{d['name']}**")
+      lines.append(f"**{d['name']}**")
     return "\n".join(lines) if lines else "なし"
 
   latest_teams_per_guild[guild_id] = {
