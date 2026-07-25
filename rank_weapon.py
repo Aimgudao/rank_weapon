@@ -46,7 +46,6 @@ class CustomMatchBot(commands.Bot):
 
   async def setup_hook(self):
     self.add_view(RegistrationView())
-    self.add_view(PersistentRematchView())
     await self.tree.sync()
 
 
@@ -78,7 +77,7 @@ def set_guild_mode(guild_id: int, mode: str):
   current_mode_per_guild[guild_id] = mode
 
 
-# --- 参加者一覧・チーム結果のEmbed生成（説明文に人数を表示し重複フィールドを削除） ---
+# --- 参加者一覧・チーム結果のEmbed生成 ---
 def build_status_embed(guild_id: int):
   participants = get_guild_participants(guild_id)
   active_list = []
@@ -95,7 +94,6 @@ def build_status_embed(guild_id: int):
     else:
       active_list.append(entry)
 
-  # 説明文の最上部にJOIN人数を表示（タイトルなし）
   desc_text = f"**JOIN ({len(active_list)}人)**\n" + ("\n".join(active_list) if active_list else "なし")
 
   embed = discord.Embed(
@@ -145,7 +143,7 @@ class RegistrationView(discord.ui.View):
       for child in self.children:
         if isinstance(child, discord.ui.Button) and child.custom_id == "btn_ps":
           if is_ps_on:
-            child.label = "PlayStationで参加 (ON) "
+            child.label = "PlayStationで参加 (ON)"
             child.style = discord.ButtonStyle.green
           else:
             child.label = "PlayStationで参加 (OFF)"
@@ -279,17 +277,26 @@ class RegistrationView(discord.ui.View):
     await refresh_panels(interaction, guild_id)
 
   @discord.ui.button(
-      label="チームを編成",
+      label="チームを編成 / 再編成",
       style=discord.ButtonStyle.red,
       custom_id="btn_match",
   )
   async def start_match(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    view = MatchModeView()
-    await interaction.response.send_message(
-        "チーム分け基準を選択してください：", view=view, ephemeral=True
-    )
+    guild_id = interaction.guild_id
+    # すでに一度チーム分けが行われている場合は、設定されているモードで即座に再編成を行う
+    if guild_id in latest_teams_per_guild:
+      current_mode = get_guild_mode(guild_id)
+      if not interaction.response.is_done():
+        await interaction.response.defer()
+      await execute_team_split(interaction.channel, current_mode, interaction)
+    else:
+      # 初回は基準選択画面を表示する
+      view = MatchModeView()
+      await interaction.response.send_message(
+          "チーム分け基準を選択してください：", view=view, ephemeral=True
+      )
 
   @discord.ui.select(
       placeholder="管理",
@@ -322,7 +329,7 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
       msg_id = panel_message_ids[guild_id]
       status_msg = await interaction.channel.fetch_message(msg_id)
       await status_msg.edit(
-          embed=build_status_embed(guild_id), view=PersistentRematchView()
+          embed=build_status_embed(guild_id), view=RegistrationView(guild_id)
       )
     except (discord.NotFound, discord.HTTPException):
       pass
@@ -349,7 +356,7 @@ class MatchModeView(discord.ui.View):
     set_guild_mode(guild_id, mode)
     if not interaction.response.is_done():
       await interaction.response.defer()
-    await execute_team_split(interaction.channel, mode)
+    await execute_team_split(interaction.channel, mode, interaction)
 
   @discord.ui.button(label="ランク＆武器", style=discord.ButtonStyle.primary)
   async def mode_both(
@@ -376,29 +383,8 @@ class MatchModeView(discord.ui.View):
     await self.run_matchmaking(interaction, "random")
 
 
-# --- 再編成ボタン（エントリーパネルに常駐用・赤） ---
-class PersistentRematchView(discord.ui.View):
-
-  def __init__(self):
-    super().__init__(timeout=None)
-
-  @discord.ui.button(
-      label="再編成",
-      style=discord.ButtonStyle.red,
-      custom_id="persistent_btn_rematch",
-  )
-  async def rematch(
-      self, interaction: discord.Interaction, button: discord.ui.Button
-  ):
-    guild_id = interaction.guild_id
-    current_mode = get_guild_mode(guild_id)
-    if not interaction.response.is_done():
-      await interaction.response.defer()
-    await execute_team_split(interaction.channel, current_mode)
-
-
 # --- チーム分けロジック & パネル上書き更新 ---
-async def execute_team_split(channel, mode):
+async def execute_team_split(channel, mode, interaction=None):
   guild = channel.guild
   guild_id = guild.id
   participants = get_guild_participants(guild_id)
@@ -407,7 +393,10 @@ async def execute_team_split(channel, mode):
   pool = [uid for uid, data in participants.items() if not data["is_afk"]]
 
   if len(pool) < 2:
-    await channel.send("参加者が足りません (最低2人必要)", delete_after=5)
+    if interaction and not interaction.response.is_done():
+      await interaction.response.send_message("参加者が足りません (最低2人必要)", ephemeral=True)
+    else:
+      await channel.send("参加者が足りません (最低2人必要)", delete_after=5)
     return
 
   excluded_user = None
@@ -476,7 +465,7 @@ async def execute_team_split(channel, mode):
       msg_id = panel_message_ids[guild_id]
       status_msg = await channel.fetch_message(msg_id)
       await status_msg.edit(
-          embed=build_status_embed(guild_id), view=PersistentRematchView()
+          embed=build_status_embed(guild_id), view=RegistrationView(guild_id)
       )
     except (discord.NotFound, discord.HTTPException):
       pass
@@ -532,7 +521,7 @@ async def cmd_custom_match(interaction: discord.Interaction):
 
   status_embed = build_status_embed(guild_id)
   status_msg = await interaction.channel.send(
-      embed=status_embed, view=PersistentRematchView()
+      embed=status_embed, view=RegistrationView(guild_id)
   )
 
   panel_message_ids[guild_id] = status_msg.id
