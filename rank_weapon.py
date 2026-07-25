@@ -163,8 +163,12 @@ def get_member_select_options(guild_id: int):
   return options
 
 
-# --- 画面全体（操作メニュー ＆ エントリーパネル）を更新する関数 ---
-async def refresh_panels(channel, guild_id: int, interaction=None):
+# --- 画面全体（操作メニュー ＆ エントリーパネル）を安全に更新する関数 ---
+async def refresh_panels(channel, guild_id: int, interaction: discord.Interaction):
+  # タイムアウトを防ぐため最初に応答を保留（defer）する
+  if not interaction.response.is_done():
+    await interaction.response.defer()
+
   # 1. 下にあるエントリーパネル（チーム結果含む）を更新
   if guild_id in panel_message_ids:
     try:
@@ -176,18 +180,16 @@ async def refresh_panels(channel, guild_id: int, interaction=None):
     except (discord.NotFound, discord.HTTPException):
       pass
 
-  # 2. 操作メニュー側もインタラクションがあれば更新
-  if interaction:
+  # 2. 上の操作メニュー側を更新
+  try:
     view = interaction.view
     if isinstance(view, RegistrationView):
       view.update_member_select(guild_id)
-    try:
-      if not interaction.response.is_done():
-        await interaction.response.edit_message(
-            embed=build_control_embed(), view=view
-        )
-    except discord.InteractionResponded:
-      pass
+    await interaction.edit_original_response(
+        embed=build_control_embed(), view=view
+    )
+  except discord.HTTPException:
+    pass
 
 
 # --- 登録用インタラクティブUI ---
@@ -339,7 +341,8 @@ class RegistrationView(discord.ui.View):
 
     selected_val = select.values[0]
     if selected_val == "none":
-      await interaction.response.defer()
+      if not interaction.response.is_done():
+        await interaction.response.defer()
       return
 
     target_uid = int(selected_val)
@@ -349,7 +352,8 @@ class RegistrationView(discord.ui.View):
       ]
       await refresh_panels(interaction.channel, guild_id, interaction)
     else:
-      await interaction.response.defer()
+      if not interaction.response.is_done():
+        await interaction.response.defer()
 
 
 class MatchModeView(discord.ui.View):
@@ -362,7 +366,8 @@ class MatchModeView(discord.ui.View):
   ):
     guild_id = interaction.guild_id
     set_guild_mode(guild_id, mode)
-    await interaction.response.defer()
+    if not interaction.response.is_done():
+      await interaction.response.defer()
     await execute_team_split(interaction.channel, mode)
 
   @discord.ui.button(label="ランク＆武器", style=discord.ButtonStyle.primary)
@@ -406,7 +411,8 @@ class PersistentRematchView(discord.ui.View):
   ):
     guild_id = interaction.guild_id
     current_mode = get_guild_mode(guild_id)
-    await interaction.response.defer()
+    if not interaction.response.is_done():
+      await interaction.response.defer()
     await execute_team_split(interaction.channel, current_mode)
 
 
@@ -478,14 +484,12 @@ async def execute_team_split(channel, mode):
       lines.append(f"{rc} <@{uid}> [{d['weapon']}] {ps}")
     return "\n".join(lines) if lines else "なし"
 
-  # チーム結果をグローバル変数に保存
   latest_teams_per_guild[guild_id] = {
       "team_a_str": format_team(team_a),
       "team_b_str": format_team(team_b),
       "excluded_user": excluded_user,
   }
 
-  # エントリーパネルのメッセージを編集して、チャット欄を流さないように結果を反映
   if guild_id in panel_message_ids:
     try:
       msg_id = panel_message_ids[guild_id]
@@ -542,18 +546,15 @@ async def cmd_custom_match(interaction: discord.Interaction):
   if guild_id in latest_teams_per_guild:
     del latest_teams_per_guild[guild_id]
 
-  # 1つ目：操作メニュー（上に表示）
   control_embed = build_control_embed()
   view = RegistrationView(guild_id)
   await interaction.response.send_message(embed=control_embed, view=view)
 
-  # 2つ目：エントリーパネル ＋ 結果（下に表示）
   status_embed = build_status_embed(guild_id)
   status_msg = await interaction.channel.send(
       embed=status_embed, view=PersistentRematchView()
   )
 
-  # メッセージIDを保持
   panel_message_ids[guild_id] = status_msg.id
 
 
