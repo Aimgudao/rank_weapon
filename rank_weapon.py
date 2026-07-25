@@ -120,7 +120,6 @@ def build_status_embed(guild_id: int):
       inline=False,
   )
 
-  # 直近のチーム分け結果があればここに統合表示する
   if guild_id in latest_teams_per_guild:
     team_data = latest_teams_per_guild[guild_id]
     embed.add_field(
@@ -138,47 +137,44 @@ def build_status_embed(guild_id: int):
           name="キャスター",
           value=f"<@{team_data['excluded_user']}>さん(次回優先)",
           inline=False,
-      )
+    )
 
   return embed
 
 
-# --- 登録用インタラクティブUIクラス ---
+# --- 動的にボタンやメニューを設定できるビュークラス ---
 class RegistrationView(discord.ui.View):
 
   def __init__(self, guild_id: int = None, user_id: int = None):
     super().__init__(timeout=None)
     if guild_id:
-      self.update_components(guild_id, user_id)
+      participants = get_guild_participants(guild_id)
+      
+      # 1. 管理用セレクトメニューの選択肢を構築
+      for child in self.children:
+        if isinstance(child, discord.ui.Select) and child.custom_id == "toggle_other_afk":
+          if not participants:
+            child.options = [discord.SelectOption(label="登録者がいません", value="none")]
+          else:
+            options = []
+            for uid, data in participants.items():
+              status_label = "[AFKにする]" if not data["is_afk"] else "[Activeにする]"
+              label = f"{data['name']} {status_label}"
+              if len(label) > 100:
+                label = label[:97] + "..."
+              options.append(discord.SelectOption(label=label, value=str(uid)))
+              if len(options) >= 25:
+                break
+            child.options = options
 
-  def update_components(self, guild_id: int, user_id: int = None):
-    participants = get_guild_participants(guild_id)
-
-    # 1. 管理用セレクトメニューのオプションを更新
-    for child in self.children:
-      if isinstance(child, discord.ui.Select) and child.custom_id == "toggle_other_afk":
-        if not participants:
-          child.options = [discord.SelectOption(label="登録者がいません", value="none")]
-        else:
-          options = []
-          for uid, data in participants.items():
-            status_label = "[AFKにする]" if not data["is_afk"] else "[Activeにする]"
-            label = f"{data['name']} {status_label}"
-            if len(label) > 100:
-              label = label[:97] + "..."
-            options.append(discord.SelectOption(label=label, value=str(uid)))
-            if len(options) >= 25:
-              break
-          child.options = options
-
-      # 2. PlayStationボタンの状態（色・ラベル）を更新
-      if isinstance(child, discord.ui.Button) and child.custom_id == "btn_ps":
-        if user_id and user_id in participants and participants[user_id].get("is_ps", False):
-          child.label = "PlayStationで参加 (ON)"
-          child.style = discord.ButtonStyle.green
-        else:
-          child.label = "PlayStationで参加 (OFF)"
-          child.style = discord.ButtonStyle.gray
+        # 2. PlayStationボタンの状態を構築
+        if isinstance(child, discord.ui.Button) and child.custom_id == "btn_ps":
+          if user_id and user_id in participants and participants[user_id].get("is_ps", False):
+            child.label = "PlayStationで参加 (ON)"
+            child.style = discord.ButtonStyle.green
+          else:
+            child.label = "PlayStationで参加 (OFF)"
+            child.style = discord.ButtonStyle.gray
 
   @discord.ui.select(
       placeholder="ランクを選択",
@@ -314,9 +310,7 @@ class RegistrationView(discord.ui.View):
 
     target_uid = int(selected_val)
     if target_uid in participants:
-      participants[target_uid]["is_afk"] = not participants[target_uid][
-          "is_afk"
-      ]
+      participants[target_uid]["is_afk"] = not participants[target_uid]["is_afk"]
       await refresh_panels(interaction, guild_id)
     else:
       await interaction.response.defer()
@@ -335,16 +329,13 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
     except (discord.NotFound, discord.HTTPException):
       pass
 
-  # 2. 上の操作メニュー（ビュー）のボタンやセレクトを最新状態に再構築して反映
-  view = interaction.view
-  if isinstance(view, RegistrationView):
-    view.update_components(guild_id, interaction.user.id)
-
+  # 2. 操作メニュー側のビューを新しい状態（現在のユーザーのPS状態や参加者リスト）で再生成して上書き
+  new_view = RegistrationView(guild_id, interaction.user.id)
   try:
     if interaction.response.is_done():
-      await interaction.edit_original_response(embed=build_control_embed(), view=view)
+      await interaction.edit_original_response(embed=build_control_embed(), view=new_view)
     else:
-      await interaction.response.edit_message(embed=build_control_embed(), view=view)
+      await interaction.response.edit_message(embed=build_control_embed(), view=new_view)
   except discord.HTTPException:
     pass
 
