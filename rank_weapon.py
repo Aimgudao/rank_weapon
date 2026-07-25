@@ -82,9 +82,6 @@ def set_guild_mode(guild_id: int, mode: str):
 def build_control_embed():
   return discord.Embed(
       title="🎮 カスタムマッチ 操作メニュー",
-      description=(
-          "下のメニューやボタンからランク・武器を選んで参加してください。"
-      ),
       color=0x5865F2,
   )
 
@@ -103,9 +100,8 @@ def build_status_embed(guild_id: int):
     ps_str = "🎮【PS】" if data["is_ps"] else ""
     rank_info = RANKS.get(data["rank"], {"color": "⚪"})
     
-    # ActiveかAFKかでステータス表記にマークを付けるなどわかりやすく区別
-    status_mark = "🟡" if data["is_afk"] else "🟢"
-    entry = f"{status_mark} {rank_info['color']} **{data['name']}** [ {data['weapon']} ] {ps_str}"
+    # リスト内の絵文字（ステータス絵文字）を削除してシンプルに
+    entry = f"{rank_info['color']} **{data['name']}** [ {data['weapon']} ] {ps_str}"
 
     if data["is_afk"]:
       afk_list.append(entry)
@@ -173,7 +169,6 @@ class RegistrationView(discord.ui.View):
           else:
             options = []
             for uid, data in participants.items():
-              # 現在の状態に応じて次に切り替わるラベルを表示
               state_text = "AFK中" if data["is_afk"] else "Active中"
               action_text = "→Activeにする" if data["is_afk"] else "→AFKにする"
               label = f"{data['name']} ({state_text} {action_text})"
