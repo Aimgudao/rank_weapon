@@ -74,10 +74,13 @@ def set_guild_mode(guild_id: int, mode: str):
   current_mode_per_guild[guild_id] = mode
 
 
-# --- 状態表示の埋め込みメッセージ生成（一番下にJOIN/AFKリストを表示） ---
+# --- 状態表示の埋め込みメッセージ生成（参加者一覧を一番下に配置） ---
 def build_status_embed(guild_id: int):
-  embed = discord.Embed(title="", color=0x2f3136)
-  embed.description = ""
+  embed = discord.Embed(
+      title="カスタムマッチ エントリーパネル",
+      description="下のメニューやボタンからランク・武器を選んで参加してください。",
+      color=0x2f3136,
+  )
 
   participants = get_guild_participants(guild_id)
   active_list = []
@@ -94,14 +97,14 @@ def build_status_embed(guild_id: int):
     else:
       active_list.append(entry)
 
-  # 一番下に表示されるように最後にフィールドを追加
+  # ここで確実に一番下に表示されるようにJOINとAFKを配置
   embed.add_field(
-      name=f"JOIN ({len(active_list)}人)",
+      name=f"🟢 JOIN ({len(active_list)}人)",
       value="\n".join(active_list) if active_list else "なし",
       inline=False,
   )
   embed.add_field(
-      name=f"AFK ({len(afk_list)}人)",
+      name=f"🟡 AFK ({len(afk_list)}人)",
       value="\n".join(afk_list) if afk_list else "なし",
       inline=False,
   )
