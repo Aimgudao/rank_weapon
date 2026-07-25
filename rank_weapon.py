@@ -95,20 +95,20 @@ def build_status_embeds(guild_id: int):
 
   embeds = []
 
-  # 1. JOINパネル
+  # 1. JOINパネル（青: 0x3498DB）
   embed_join = discord.Embed(
-      title=f"JOIN ({len(active_list)}人)",
+      title=f"🟦 JOIN ({len(active_list)}人)",
       description="\n".join(active_list) if active_list else "なし",
-      color=0x2F3136,
+      color=0x3498DB,
   )
   embeds.append(embed_join)
 
-  # 2. AFKパネル（メンバーがいる場合のみ追加）
+  # 2. AFKパネル（メンバーがいる場合のみ追加 / 赤: 0xE74C3C）
   if afk_list:
     embed_afk = discord.Embed(
-        title=f"AFK ({len(afk_list)}人)",
+        title=f"🟥 AFK ({len(afk_list)}人)",
         description="\n".join(afk_list),
-        color=0x2F3136,
+        color=0xE74C3C,
     )
     embeds.append(embed_afk)
 
@@ -132,7 +132,7 @@ def build_status_embeds(guild_id: int):
 
     if team_data["excluded_user"]:
       embed_caster = discord.Embed(
-          title="キャスター",
+          title="🎙️ キャスター",
           description=f"{team_data['excluded_name']}さん (次回優先)",
           color=0x95A5A6,
       )
@@ -264,7 +264,7 @@ class RegistrationView(discord.ui.View):
     await refresh_panels(interaction, guild_id)
 
   @discord.ui.button(
-      label="AFK / Active",
+      label="Active / AFK",
       style=discord.ButtonStyle.blurple,
       custom_id="btn_afk",
   )
@@ -454,7 +454,7 @@ async def execute_team_split(channel, mode):
       else:
         team_b.append(chunk[0])
 
-  # ランクアイコンやメンションを省き、名前（太字）だけに整形
+  # 名前（太字）だけのシンプル表示に整形
   def format_team(team_list):
     lines = []
     for uid in team_list:
