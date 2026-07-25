@@ -2,6 +2,8 @@ import os
 import random
 from discord.ext import commands
 import discord
+from flask import Flask
+import threading
 
 # --- 設定・定数 ---
 TOKEN = os.getenv("DISCORD_TOKEN", "YOUR_BOT_TOKEN_HERE")
@@ -556,11 +558,6 @@ async def cmd_custom_match(interaction: discord.Interaction):
 
 
 # --- Renderのスリープ防止用簡易Webサーバー ---
-from flask import Flask
-import threading
-import app
-
-# (既存のFlaskサーバー処理)
 app = Flask(__name__)
 
 
