@@ -143,81 +143,42 @@ def build_status_embed(guild_id: int):
   return embed
 
 
-# --- セレクトメニューの選択肢を動적生成 ---
-def get_member_select_options(guild_id: int):
-  participants = get_guild_participants(guild_id)
-  if not participants:
-    return [discord.SelectOption(label="登録者がいません", value="none")]
-
-  options = []
-  for uid, data in participants.items():
-    status_label = "[AFKにする]" if not data["is_afk"] else "[Activeにする]"
-    label = f"{data['name']} {status_label}"
-    if len(label) > 100:
-      label = label[:97] + "..."
-    options.append(discord.SelectOption(label=label, value=str(uid)))
-
-    if len(options) >= 25:
-      break
-
-  return options
-
-
-# --- ビューのボタン状態をユーザーデータに合わせて同期するヘルパー ---
-def sync_registration_view_items(view, guild_id: int, user_id: int):
-  # 管理用セレクトメニューの選択肢を最新に更新
-  for child in view.children:
-    if isinstance(child, discord.ui.Select) and child.custom_id == "toggle_other_afk":
-      child.options = get_member_select_options(guild_id)
-
-  # 自身のPSボタンの状態を同期
-  participants = get_guild_participants(guild_id)
-  data = participants.get(user_id)
-  for child in view.children:
-    if isinstance(child, discord.ui.Button) and child.custom_id == "btn_ps":
-      if data and data.get("is_ps", False):
-        child.label = "PlayStationで参加 (ON)"
-        child.style = discord.ButtonStyle.green
-      else:
-        child.label = "PlayStationで参加 (OFF)"
-        child.style = discord.ButtonStyle.gray
-
-
-# --- 画面全体（操作メニュー ＆ エントリーパネル）を安全に更新する関数 ---
-async def refresh_panels(channel, guild_id: int, interaction: discord.Interaction):
-  if not interaction.response.is_done():
-    await interaction.response.defer()
-
-  # 1. 下にあるエントリーパネル（チーム結果含む）を更新
-  if guild_id in panel_message_ids:
-    try:
-      msg_id = panel_message_ids[guild_id]
-      status_msg = await channel.fetch_message(msg_id)
-      await status_msg.edit(
-          embed=build_status_embed(guild_id), view=PersistentRematchView()
-      )
-    except (discord.NotFound, discord.HTTPException):
-      pass
-
-  # 2. 上の操作メニュー側を更新
-  try:
-    view = interaction.view
-    if isinstance(view, RegistrationView):
-      sync_registration_view_items(view, guild_id, interaction.user.id)
-    await interaction.edit_original_response(
-        embed=build_control_embed(), view=view
-    )
-  except discord.HTTPException:
-    pass
-
-
-# --- 登録用インタラクティブUI ---
+# --- 登録用インタラクティブUIクラス ---
 class RegistrationView(discord.ui.View):
 
   def __init__(self, guild_id: int = None, user_id: int = None):
     super().__init__(timeout=None)
     if guild_id:
-      sync_registration_view_items(self, guild_id, user_id)
+      self.update_components(guild_id, user_id)
+
+  def update_components(self, guild_id: int, user_id: int = None):
+    participants = get_guild_participants(guild_id)
+
+    # 1. 管理用セレクトメニューのオプションを更新
+    for child in self.children:
+      if isinstance(child, discord.ui.Select) and child.custom_id == "toggle_other_afk":
+        if not participants:
+          child.options = [discord.SelectOption(label="登録者がいません", value="none")]
+        else:
+          options = []
+          for uid, data in participants.items():
+            status_label = "[AFKにする]" if not data["is_afk"] else "[Activeにする]"
+            label = f"{data['name']} {status_label}"
+            if len(label) > 100:
+              label = label[:97] + "..."
+            options.append(discord.SelectOption(label=label, value=str(uid)))
+            if len(options) >= 25:
+              break
+          child.options = options
+
+      # 2. PlayStationボタンの状態（色・ラベル）を更新
+      if isinstance(child, discord.ui.Button) and child.custom_id == "btn_ps":
+        if user_id and user_id in participants and participants[user_id].get("is_ps", False):
+          child.label = "PlayStationで参加 (ON)"
+          child.style = discord.ButtonStyle.green
+        else:
+          child.label = "PlayStationで参加 (OFF)"
+          child.style = discord.ButtonStyle.gray
 
   @discord.ui.select(
       placeholder="ランクを選択",
@@ -248,7 +209,7 @@ class RegistrationView(discord.ui.View):
     else:
       participants[uid]["rank"] = select.values[0]
 
-    await refresh_panels(interaction.channel, guild_id, interaction)
+    await refresh_panels(interaction, guild_id)
 
   @discord.ui.select(
       placeholder="武器を選択",
@@ -278,7 +239,7 @@ class RegistrationView(discord.ui.View):
     else:
       participants[uid]["weapon"] = select.values[0]
 
-    await refresh_panels(interaction.channel, guild_id, interaction)
+    await refresh_panels(interaction, guild_id)
 
   @discord.ui.button(
       label="PlayStationで参加 (OFF)",
@@ -303,7 +264,7 @@ class RegistrationView(discord.ui.View):
     else:
       participants[uid]["is_ps"] = not participants[uid]["is_ps"]
 
-    await refresh_panels(interaction.channel, guild_id, interaction)
+    await refresh_panels(interaction, guild_id)
 
   @discord.ui.button(
       label="Active / AFK",
@@ -320,7 +281,7 @@ class RegistrationView(discord.ui.View):
     if uid in participants:
       participants[uid]["is_afk"] = not participants[uid]["is_afk"]
 
-    await refresh_panels(interaction.channel, guild_id, interaction)
+    await refresh_panels(interaction, guild_id)
 
   @discord.ui.button(
       label="チームを編成",
@@ -348,8 +309,7 @@ class RegistrationView(discord.ui.View):
 
     selected_val = select.values[0]
     if selected_val == "none":
-      if not interaction.response.is_done():
-        await interaction.response.defer()
+      await interaction.response.defer()
       return
 
     target_uid = int(selected_val)
@@ -357,10 +317,36 @@ class RegistrationView(discord.ui.View):
       participants[target_uid]["is_afk"] = not participants[target_uid][
           "is_afk"
       ]
-      await refresh_panels(interaction.channel, guild_id, interaction)
+      await refresh_panels(interaction, guild_id)
     else:
-      if not interaction.response.is_done():
-        await interaction.response.defer()
+      await interaction.response.defer()
+
+
+# --- パネル全体を更新する共通関数 ---
+async def refresh_panels(interaction: discord.Interaction, guild_id: int):
+  # 1. 下にあるエントリーパネルを更新
+  if guild_id in panel_message_ids:
+    try:
+      msg_id = panel_message_ids[guild_id]
+      status_msg = await interaction.channel.fetch_message(msg_id)
+      await status_msg.edit(
+          embed=build_status_embed(guild_id), view=PersistentRematchView()
+      )
+    except (discord.NotFound, discord.HTTPException):
+      pass
+
+  # 2. 上の操作メニュー（ビュー）のボタンやセレクトを最新状態に再構築して反映
+  view = interaction.view
+  if isinstance(view, RegistrationView):
+    view.update_components(guild_id, interaction.user.id)
+
+  try:
+    if interaction.response.is_done():
+      await interaction.edit_original_response(embed=build_control_embed(), view=view)
+    else:
+      await interaction.response.edit_message(embed=build_control_embed(), view=view)
+  except discord.HTTPException:
+    pass
 
 
 class MatchModeView(discord.ui.View):
