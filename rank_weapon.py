@@ -46,7 +46,6 @@ class CustomMatchBot(commands.Bot):
 
   async def setup_hook(self):
     self.add_view(RegistrationView())
-    self.add_view(PersistentMatchView())
     await self.tree.sync()
 
 
@@ -95,7 +94,7 @@ def build_status_embed(guild_id: int):
     else:
       active_list.append(entry)
 
-  # JOINとAFKの間に2行（空行2つ＝改行3つ）のスペースを確保
+  # JOINとAFKの間に2行ほど（空行2つ＝改行3つ）のスペースを確保
   active_content = "\n".join(active_list) if active_list else "なし"
   desc_text = f"**JOIN ({len(active_list)}人)**\n{active_content}\n\n\n"
 
@@ -280,7 +279,7 @@ class RegistrationView(discord.ui.View):
     await refresh_panels(interaction, guild_id)
 
   @discord.ui.button(
-      label="チームを編成 / 再編成",
+      label="チーム編成 / 再編成",
       style=discord.ButtonStyle.red,
       custom_id="btn_match",
   )
@@ -329,8 +328,9 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
     try:
       msg_id = panel_message_ids[guild_id]
       status_msg = await interaction.channel.fetch_message(msg_id)
+      # ステータスパネルにはボタン（view）を表示しない
       await status_msg.edit(
-          embed=build_status_embed(guild_id), view=PersistentMatchView()
+          embed=build_status_embed(guild_id), view=None
       )
     except (discord.NotFound, discord.HTTPException):
       pass
@@ -382,33 +382,6 @@ class MatchModeView(discord.ui.View):
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
     await self.run_matchmaking(interaction, "random")
-
-
-# --- 常駐用のビュー（パネル用・赤ボタン統合） ---
-class PersistentMatchView(discord.ui.View):
-
-  def __init__(self):
-    super().__init__(timeout=None)
-
-  @discord.ui.button(
-      label="チームを編成 / 再編成",
-      style=discord.ButtonStyle.red,
-      custom_id="persistent_btn_match",
-  )
-  async def match_button(
-      self, interaction: discord.Interaction, button: discord.ui.Button
-  ):
-    guild_id = interaction.guild_id
-    if guild_id in latest_teams_per_guild:
-      current_mode = get_guild_mode(guild_id)
-      if not interaction.response.is_done():
-        await interaction.response.defer()
-      await execute_team_split(interaction.channel, current_mode)
-    else:
-      view = MatchModeView()
-      await interaction.response.send_message(
-          "チーム分け基準を選択してください：", view=view, ephemeral=True
-      )
 
 
 # --- チーム分けロジック & パネル上書き更新 ---
@@ -489,8 +462,9 @@ async def execute_team_split(channel, mode):
     try:
       msg_id = panel_message_ids[guild_id]
       status_msg = await channel.fetch_message(msg_id)
+      # ステータスパネルにはボタン（view）を表示しない
       await status_msg.edit(
-          embed=build_status_embed(guild_id), view=PersistentMatchView()
+          embed=build_status_embed(guild_id), view=None
       )
     except (discord.NotFound, discord.HTTPException):
       pass
@@ -551,11 +525,12 @@ async def cmd_custom_match(interaction: discord.Interaction):
     del latest_teams_per_guild[guild_id]
 
   view = RegistrationView(guild_id, interaction.user.id)
-  await interaction.response.send_message(content="\u200b", view=view, ephemeral=True)
+  await interaction.response.send_message(content="\u200b", view=view)
 
   status_embed = build_status_embed(guild_id)
+  # ステータスパネル送信時はviewを付与しない（ボタンなし）
   status_msg = await interaction.channel.send(
-      embed=status_embed, view=PersistentMatchView()
+      embed=status_embed, view=None
   )
 
   panel_message_ids[guild_id] = status_msg.id
