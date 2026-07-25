@@ -78,21 +78,19 @@ def set_guild_mode(guild_id: int, mode: str):
   current_mode_per_guild[guild_id] = mode
 
 
-# --- 操作パネル用のEmbed生成（タイトルをスペースで隠す） ---
+# --- 操作パネル用のEmbed生成（ゼロ幅スペースでエラー回避） ---
 def build_control_embed():
   embed = discord.Embed(
-      title=" ",
-      description=" ",
+      description="\u200b",
       color=0x5865F2,
   )
   return embed
 
 
-# --- エントリーパネル ＆ チーム結果を統合したEmbed生成（タイトルをスペースで隠す） ---
+# --- エントリーパネル ＆ チーム結果を統合したEmbed生成（ゼロ幅スペースでエラー回避） ---
 def build_status_embed(guild_id: int):
   embed = discord.Embed(
-      title=" ",
-      description=" ",
+      description="\u200b",
       color=0x2F3136,
   )
 
