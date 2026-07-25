@@ -31,7 +31,7 @@ WEAPONS = ["AR", "SMG", "Flex", "SR"]
 participants_per_guild = {}
 priority_pool_per_guild = {}
 current_mode_per_guild = {}
-ps_notice_per_guild = {}  # サーバーごとのPS通知設定（デフォルトTrue: ON）
+ps_notice_per_guild = {}  # サーバーごとのPS通知（テキスト＆音声読み上げ）設定（デフォルトTrue: ON）
 panel_message_ids = {}  # サーバーごとのパネルメッセージIDを保持
 latest_teams_per_guild = {}  # サーバーごとの直近のチーム分け結果を保持
 
@@ -123,21 +123,23 @@ def build_status_embeds(guild_id: int):
     )
     embeds.append(embed_afk)
 
-  # 3. チーム分け結果パネル（結果が存在する場合 / ダークグレー: 0x2F3136）
+  # 3. チーム分け結果パネル（結果が存在する場合）
   if guild_id in latest_teams_per_guild:
     team_data = latest_teams_per_guild[guild_id]
     
+    # チームA（青: 0x3498DB）
     embed_team_a = discord.Embed(
         title="🟦 チームA",
         description=team_data["team_a_str"] if team_data["team_a_str"] else "なし",
-        color=0x2F3136,
+        color=0x3498DB,
     )
     embeds.append(embed_team_a)
 
+    # チームB（赤: 0xE74C3C）
     embed_team_b = discord.Embed(
         title="🟥 チームB",
         description=team_data["team_b_str"] if team_data["team_b_str"] else "なし",
-        color=0x2F3136,
+        color=0xE74C3C,
     )
     embeds.append(embed_team_b)
 
@@ -539,11 +541,11 @@ async def execute_team_split(channel, mode):
   await move_members(team_a, vc_a)
   await move_members(team_b, vc_b)
 
-  # PS通知がONのときだけ、手動移動の案内を送信する
+  # PS通知がONのときだけ、手動移動の案内をテキスト＆音声読み上げ（tts=True）で送信する
   if ps_users_to_notify and get_guild_ps_notice(guild_id):
     mentions = " ".join([f"{m.mention}" for m, _ in ps_users_to_notify])
     notice_text = f"{mentions} PlayStationで参加中の方は手動で指定のボイスチャンネルへ移動してください。"
-    await channel.send(content=notice_text, delete_after=15)
+    await channel.send(content=notice_text, tts=True, delete_after=15)
 
 
 # --- /カスタムマッチ コマンド ---
