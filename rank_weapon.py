@@ -153,8 +153,8 @@ class RegistrationView(discord.ui.View):
       if user_id and user_id in participants:
         is_ps_on = participants[user_id].get("is_ps", False)
 
-      # 1. PlayStationボタンの見た目（ラベル・色）を個別に設定
       for child in self.children:
+        # 1. PlayStationボタンの状態（ラベル・色）
         if isinstance(child, discord.ui.Button) and child.custom_id == "btn_ps":
           if is_ps_on:
             child.label = "PlayStationで参加 (ON)"
@@ -163,13 +163,14 @@ class RegistrationView(discord.ui.View):
             child.label = "PlayStationで参加 (OFF)"
             child.style = discord.ButtonStyle.gray
 
-        # 2. 管理用セレクトメニューの選択肢を構築
-        if isinstance(child, discord.ui.Select) and child.custom_id == "toggle_other_afk":
+        # 2. 管理用セレクトメニューの選択肢を確実に構築
+        elif isinstance(child, discord.ui.Select) and child.custom_id == "toggle_other_afk":
           if not participants:
             child.options = [discord.SelectOption(label="登録者がいません", value="none")]
           else:
             options = []
             for uid, data in participants.items():
+              # 現在の状態に応じて次に切り替わるラベルを表示
               status_label = "[AFKにする]" if not data["is_afk"] else "[Activeにする]"
               label = f"{data['name']} {status_label}"
               if len(label) > 100:
@@ -279,6 +280,15 @@ class RegistrationView(discord.ui.View):
 
     if uid in participants:
       participants[uid]["is_afk"] = not participants[uid]["is_afk"]
+    else:
+      # 未登録の状態でボタンを押した場合の安全な新規登録
+      participants[uid] = {
+          "name": interaction.user.display_name,
+          "rank": "ゴールド",
+          "weapon": "AR",
+          "is_ps": False,
+          "is_afk": True,  # ボタンで切り替えたのでAFKスタート等、お好みで調整可能
+      }
 
     await refresh_panels(interaction, guild_id)
 
@@ -313,6 +323,7 @@ class RegistrationView(discord.ui.View):
 
     target_uid = int(selected_val)
     if target_uid in participants:
+      # 反転させる
       participants[target_uid]["is_afk"] = not participants[target_uid]["is_afk"]
       await refresh_panels(interaction, guild_id)
     else:
@@ -332,7 +343,7 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
     except (discord.NotFound, discord.HTTPException):
       pass
 
-  # 2. 操作メニュー側のビューを、現在のユーザー情報に合わせて再生成して反映
+  # 2. 操作メニュー側のビューを、最新の参加者データで完全に再生成して反映
   new_view = RegistrationView(guild_id, interaction.user.id)
   try:
     if interaction.response.is_done():
