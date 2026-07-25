@@ -92,7 +92,7 @@ def get_member_select_options(guild_id: int):
     
     options = []
     for uid, data in participants.items():
-        action_text = " [JOIN ➔ AFK]" if not data["is_afk"] else " [AFK ➔ JOIN]"
+        action_text = " [Active ➔ AFK]" if not data["is_afk"] else " [AFK ➔ Active]"
         label = f"{data['name']} {action_text}"
         if len(label) > 100:
             label = label[:97] + "..."
@@ -180,7 +180,7 @@ class RegistrationView(discord.ui.View):
         self.update_member_select(guild_id)
         await interaction.response.edit_message(embed=build_status_embed(guild_id), view=self)
 
-    @discord.ui.button(label="JOIN / AFK", style=discord.ButtonStyle.blurple, custom_id="btn_afk")
+    @discord.ui.button(label="Active / AFK", style=discord.ButtonStyle.blurple, custom_id="btn_afk")
     async def toggle_afk(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_id = interaction.guild_id
         participants = get_guild_participants(guild_id)
