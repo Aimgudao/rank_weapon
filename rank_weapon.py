@@ -96,7 +96,7 @@ def build_status_embed(guild_id: int):
       active_list.append(entry)
 
   # 説明文の最上部にJOIN人数を表示（タイトルなし）
-  desc_text = f"🟢 **JOIN ({len(active_list)}人)**\n" + ("\n".join(active_list) if active_list else "なし")
+  desc_text = f"**JOIN ({len(active_list)}人)**\n" + ("\n".join(active_list) if active_list else "なし")
 
   embed = discord.Embed(
       description=desc_text,
@@ -104,7 +104,7 @@ def build_status_embed(guild_id: int):
   )
 
   embed.add_field(
-      name=f"🟡 AFK ({len(afk_list)}人)",
+      name=f"AFK ({len(afk_list)}人)",
       value="\n".join(afk_list) if afk_list else "なし",
       inline=False,
   )
@@ -145,7 +145,7 @@ class RegistrationView(discord.ui.View):
       for child in self.children:
         if isinstance(child, discord.ui.Button) and child.custom_id == "btn_ps":
           if is_ps_on:
-            child.label = "PlayStationで参加 (ON)"
+            child.label = "PlayStationで参加 (ON) "
             child.style = discord.ButtonStyle.green
           else:
             child.label = "PlayStationで参加 (OFF)"
@@ -157,8 +157,8 @@ class RegistrationView(discord.ui.View):
           else:
             options = []
             for uid, data in participants.items():
-              state_text = "AFK中" if data["is_afk"] else "Active中"
-              action_text = "→Activeにする" if data["is_afk"] else "→AFKにする"
+              state_text = "AFK" if data["is_afk"] else "Active"
+              action_text = "→Active" if data["is_afk"] else "→AFK"
               label = f"{data['name']} ({state_text} {action_text})"
               if len(label) > 100:
                 label = label[:97] + "..."
@@ -292,7 +292,7 @@ class RegistrationView(discord.ui.View):
     )
 
   @discord.ui.select(
-      placeholder="管理 (メンバーのAFK切り替え)",
+      placeholder="管理",
       options=[discord.SelectOption(label="登録者がいません", value="none")],
       custom_id="toggle_other_afk",
   )
