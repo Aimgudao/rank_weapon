@@ -76,8 +76,8 @@ def set_guild_mode(guild_id: int, mode: str):
 
 # --- 状態表示の埋め込みメッセージ生成（一番下にJOIN/AFKリストを表示） ---
 def build_status_embed(guild_id: int):
-  embed = discord.Embed(title="カスタムマッチ エントリーパネル", color=0x2f3136)
-  embed.description = "ランク・武器・ステータスを選択して参加してください。"
+  embed = discord.Embed(title="", color=0x2f3136)
+  embed.description = ""
 
   participants = get_guild_participants(guild_id)
   active_list = []
