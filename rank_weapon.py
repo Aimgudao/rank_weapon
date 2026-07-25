@@ -77,8 +77,8 @@ def set_guild_mode(guild_id: int, mode: str):
   current_mode_per_guild[guild_id] = mode
 
 
-# --- 参加者一覧・チーム結果のEmbed生成 ---
-def build_status_embed(guild_id: int):
+# --- 参加者一覧・チーム結果のEmbed生成（複数Embed対応） ---
+def build_status_embeds(guild_id: int):
   participants = get_guild_participants(guild_id)
   active_list = []
   afk_list = []
@@ -86,7 +86,6 @@ def build_status_embed(guild_id: int):
   for uid, data in participants.items():
     ps_str = "🎮【PS】" if data["is_ps"] else ""
     rank_info = RANKS.get(data["rank"], {"color": "⚪"})
-    
     entry = f"{rank_info['color']} **{data['name']}** [ {data['weapon']} ] {ps_str}"
 
     if data["is_afk"]:
@@ -94,59 +93,52 @@ def build_status_embed(guild_id: int):
     else:
       active_list.append(entry)
 
-  embed = discord.Embed(
+  embeds = []
+
+  # 1. JOINパネル
+  embed_join = discord.Embed(
+      title=f"🟢 JOIN ({len(active_list)}人)",
+      description="\n".join(active_list) if active_list else "なし",
       color=0x2F3136,
   )
+  embeds.append(embed_join)
 
-  # 1. JOINメンバーをフィールドに追加
-  embed.add_field(
-      name=f"JOIN ({len(active_list)}人)",
-      value="\n".join(active_list) if active_list else "なし",
-      inline=False,
-  )
+  # 2. AFKパネル（メンバーがいる場合のみ追加）
+  if afk_list:
+    embed_afk = discord.Embed(
+        title=f"💤 AFK ({len(afk_list)}人)",
+        description="\n".join(afk_list),
+        color=0x2F3136,
+    )
+    embeds.append(embed_afk)
 
-  # 2. JOINとAFKの間に空のフィールドを挟んでスペースを作る
-  embed.add_field(
-      name="\u200b",
-      value="\u200b",
-      inline=False,
-  )
-
-  # 3. AFKメンバーをフィールドに追加
-  embed.add_field(
-      name=f"AFK ({len(afk_list)}人)",
-      value="\n".join(afk_list) if afk_list else "なし",
-      inline=False,
-  )
-
+  # 3. チーム分け結果パネル（結果が存在する場合）
   if guild_id in latest_teams_per_guild:
     team_data = latest_teams_per_guild[guild_id]
     
-    # チーム分けの前にもスペースを入れると綺麗に見えます
-    embed.add_field(
-        name="\u200b",
-        value="\u200b",
-        inline=False,
+    embed_team_a = discord.Embed(
+        title="🟦 チームA",
+        description=team_data["team_a_str"] if team_data["team_a_str"] else "なし",
+        color=0x3498DB,
     )
-    
-    embed.add_field(
-        name="🟦 チームA",
-        value=team_data["team_a_str"] if team_data["team_a_str"] else "なし",
-        inline=False,
-    )
-    embed.add_field(
-        name="🟥 チームB",
-        value=team_data["team_b_str"] if team_data["team_b_str"] else "なし",
-        inline=False,
-    )
-    if team_data["excluded_user"]:
-      embed.add_field(
-          name="キャスター",
-          value=f"<@{team_data['excluded_user']}>さん(次回優先)",
-          inline=False,
-      )
+    embeds.append(embed_team_a)
 
-  return embed
+    embed_team_b = discord.Embed(
+        title="🟥 チームB",
+        description=team_data["team_b_str"] if team_data["team_b_str"] else "なし",
+        color=0xE74C3C,
+    )
+    embeds.append(embed_team_b)
+
+    if team_data["excluded_user"]:
+      embed_caster = discord.Embed(
+          title="🎙️ キャスター",
+          description=f"<@{team_data['excluded_user']}>さん (次回優先)",
+          color=0x95A5A6,
+      )
+      embeds.append(embed_caster)
+
+  return embeds
 
 
 # --- 動的にボタン状態や選択肢を調整するビュークラス ---
@@ -346,9 +338,8 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
     try:
       msg_id = panel_message_ids[guild_id]
       status_msg = await interaction.channel.fetch_message(msg_id)
-      # ステータスパネルにはボタン（view）を表示しない
       await status_msg.edit(
-          embed=build_status_embed(guild_id), view=None
+          embeds=build_status_embeds(guild_id), view=None
       )
     except (discord.NotFound, discord.HTTPException):
       pass
@@ -480,9 +471,8 @@ async def execute_team_split(channel, mode):
     try:
       msg_id = panel_message_ids[guild_id]
       status_msg = await channel.fetch_message(msg_id)
-      # ステータスパネルにはボタン（view）を表示しない
       await status_msg.edit(
-          embed=build_status_embed(guild_id), view=None
+          embeds=build_status_embeds(guild_id), view=None
       )
     except (discord.NotFound, discord.HTTPException):
       pass
@@ -528,7 +518,6 @@ async def execute_team_split(channel, mode):
 async def cmd_custom_match(interaction: discord.Interaction):
   guild_id = interaction.guild_id
   
-  # 既存のステータスパネルがあれば削除を試みる
   if guild_id in panel_message_ids:
     try:
       old_msg = await interaction.channel.fetch_message(panel_message_ids[guild_id])
@@ -545,10 +534,9 @@ async def cmd_custom_match(interaction: discord.Interaction):
   view = RegistrationView(guild_id, interaction.user.id)
   await interaction.response.send_message(content="\u200b", view=view)
 
-  status_embed = build_status_embed(guild_id)
-  # ステータスパネル送信時はviewを付与しない（ボタンなし）
+  status_embeds = build_status_embeds(guild_id)
   status_msg = await interaction.channel.send(
-      embed=status_embed, view=None
+      embeds=status_embeds, view=None
   )
 
   panel_message_ids[guild_id] = status_msg.id
