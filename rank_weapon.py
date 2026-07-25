@@ -46,6 +46,7 @@ class CustomMatchBot(commands.Bot):
 
   async def setup_hook(self):
     self.add_view(RegistrationView())
+    self.add_view(PersistentMatchView())
     await self.tree.sync()
 
 
@@ -94,7 +95,7 @@ def build_status_embed(guild_id: int):
     else:
       active_list.append(entry)
 
-  # JOINリストの最後とAFKの間にスペース（空行）をしっかり確保
+  # JOINとAFKの間に2行（空行2つ＝改行3つ）のスペースを確保
   active_content = "\n".join(active_list) if active_list else "なし"
   desc_text = f"**JOIN ({len(active_list)}人)**\n{active_content}\n\n\n"
 
@@ -279,7 +280,7 @@ class RegistrationView(discord.ui.View):
     await refresh_panels(interaction, guild_id)
 
   @discord.ui.button(
-      label="チーム編成 / 再編成",
+      label="チームを編成 / 再編成",
       style=discord.ButtonStyle.red,
       custom_id="btn_match",
   )
@@ -291,7 +292,7 @@ class RegistrationView(discord.ui.View):
       current_mode = get_guild_mode(guild_id)
       if not interaction.response.is_done():
         await interaction.response.defer()
-      await execute_team_split(interaction.channel, current_mode, interaction)
+      await execute_team_split(interaction.channel, current_mode)
     else:
       view = MatchModeView()
       await interaction.response.send_message(
@@ -329,7 +330,7 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
       msg_id = panel_message_ids[guild_id]
       status_msg = await interaction.channel.fetch_message(msg_id)
       await status_msg.edit(
-          embed=build_status_embed(guild_id), view=RegistrationView(guild_id)
+          embed=build_status_embed(guild_id), view=PersistentMatchView()
       )
     except (discord.NotFound, discord.HTTPException):
       pass
@@ -356,7 +357,7 @@ class MatchModeView(discord.ui.View):
     set_guild_mode(guild_id, mode)
     if not interaction.response.is_done():
       await interaction.response.defer()
-    await execute_team_split(interaction.channel, mode, interaction)
+    await execute_team_split(interaction.channel, mode)
 
   @discord.ui.button(label="ランク＆武器", style=discord.ButtonStyle.primary)
   async def mode_both(
@@ -383,8 +384,35 @@ class MatchModeView(discord.ui.View):
     await self.run_matchmaking(interaction, "random")
 
 
+# --- 常駐用のビュー（パネル用・赤ボタン統合） ---
+class PersistentMatchView(discord.ui.View):
+
+  def __init__(self):
+    super().__init__(timeout=None)
+
+  @discord.ui.button(
+      label="チームを編成 / 再編成",
+      style=discord.ButtonStyle.red,
+      custom_id="persistent_btn_match",
+  )
+  async def match_button(
+      self, interaction: discord.Interaction, button: discord.ui.Button
+  ):
+    guild_id = interaction.guild_id
+    if guild_id in latest_teams_per_guild:
+      current_mode = get_guild_mode(guild_id)
+      if not interaction.response.is_done():
+        await interaction.response.defer()
+      await execute_team_split(interaction.channel, current_mode)
+    else:
+      view = MatchModeView()
+      await interaction.response.send_message(
+          "チーム分け基準を選択してください：", view=view, ephemeral=True
+      )
+
+
 # --- チーム分けロジック & パネル上書き更新 ---
-async def execute_team_split(channel, mode, interaction=None):
+async def execute_team_split(channel, mode):
   guild = channel.guild
   guild_id = guild.id
   participants = get_guild_participants(guild_id)
@@ -393,10 +421,7 @@ async def execute_team_split(channel, mode, interaction=None):
   pool = [uid for uid, data in participants.items() if not data["is_afk"]]
 
   if len(pool) < 2:
-    if interaction and not interaction.response.is_done():
-      await interaction.response.send_message("参加者が足りません (最低2人必要)", ephemeral=True)
-    else:
-      await channel.send("参加者が足りません (最低2人必要)", delete_after=5)
+    await channel.send("参加者が足りません (最低2人必要)", delete_after=5)
     return
 
   excluded_user = None
@@ -465,7 +490,7 @@ async def execute_team_split(channel, mode, interaction=None):
       msg_id = panel_message_ids[guild_id]
       status_msg = await channel.fetch_message(msg_id)
       await status_msg.edit(
-          embed=build_status_embed(guild_id), view=RegistrationView(guild_id)
+          embed=build_status_embed(guild_id), view=PersistentMatchView()
       )
     except (discord.NotFound, discord.HTTPException):
       pass
@@ -530,7 +555,7 @@ async def cmd_custom_match(interaction: discord.Interaction):
 
   status_embed = build_status_embed(guild_id)
   status_msg = await interaction.channel.send(
-      embed=status_embed, view=RegistrationView(guild_id)
+      embed=status_embed, view=PersistentMatchView()
   )
 
   panel_message_ids[guild_id] = status_msg.id
