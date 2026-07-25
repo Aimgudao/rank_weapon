@@ -94,7 +94,9 @@ def build_status_embed(guild_id: int):
     else:
       active_list.append(entry)
 
-  desc_text = f"**JOIN ({len(active_list)}人)**\n" + ("\n".join(active_list) if active_list else "なし")
+  # JOINリストの最後とAFKの間にスペース（空行）を作る
+  active_content = "\n".join(active_list) if active_list else "なし"
+  desc_text = f"**JOIN ({len(active_list)}人)**\n{active_content}\n\n\n"
 
   embed = discord.Embed(
       description=desc_text,
@@ -285,14 +287,12 @@ class RegistrationView(discord.ui.View):
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
     guild_id = interaction.guild_id
-    # すでに一度チーム分けが行われている場合は、設定されているモードで即座に再編成を行う
     if guild_id in latest_teams_per_guild:
       current_mode = get_guild_mode(guild_id)
       if not interaction.response.is_done():
         await interaction.response.defer()
       await execute_team_split(interaction.channel, current_mode, interaction)
     else:
-      # 初回は基準選択画面を表示する
       view = MatchModeView()
       await interaction.response.send_message(
           "チーム分け基準を選択してください：", view=view, ephemeral=True
