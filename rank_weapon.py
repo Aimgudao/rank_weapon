@@ -133,7 +133,7 @@ def build_status_embeds(guild_id: int):
     if team_data["excluded_user"]:
       embed_caster = discord.Embed(
           title="🎙️ キャスター",
-          description=f"<@{team_data['excluded_user']}>さん (次回優先)",
+          description=f"{team_data['excluded_name']}さん (次回優先)",
           color=0x95A5A6,
       )
       embeds.append(embed_caster)
@@ -407,12 +407,14 @@ async def execute_team_split(channel, mode):
     return
 
   excluded_user = None
+  excluded_name = None
   if len(pool) % 2 != 0:
     priority_candidates = [uid for uid in pool if uid not in priority_pool]
     if not priority_candidates:
       priority_candidates = pool
 
     excluded_user = random.choice(priority_candidates)
+    excluded_name = participants[excluded_user]["name"]
     pool.remove(excluded_user)
     set_guild_priority(guild_id, [excluded_user])
   else:
@@ -452,19 +454,20 @@ async def execute_team_split(channel, mode):
       else:
         team_b.append(chunk[0])
 
+  # メンションやPSマークを省き、ランク色と名前だけに整形
   def format_team(team_list):
     lines = []
     for uid in team_list:
       d = participants[uid]
-      ps = "🎮PS" if d["is_ps"] else ""
       rc = RANKS.get(d["rank"], {"color": "⚪"})["color"]
-      lines.append(f"{rc} <@{uid}> [{d['weapon']}] {ps}")
+      lines.append(f"{rc} **{d['name']}**")
     return "\n".join(lines) if lines else "なし"
 
   latest_teams_per_guild[guild_id] = {
       "team_a_str": format_team(team_a),
       "team_b_str": format_team(team_b),
       "excluded_user": excluded_user,
+      "excluded_name": excluded_name,
   }
 
   if guild_id in panel_message_ids:
