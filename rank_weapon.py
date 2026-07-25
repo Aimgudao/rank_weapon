@@ -31,6 +31,7 @@ WEAPONS = ["AR", "SMG", "Flex", "SR"]
 participants_per_guild = {}
 priority_pool_per_guild = {}
 current_mode_per_guild = {}
+ps_notice_per_guild = {}  # サーバーごとのPS通知設定（デフォルトTrue: ON）
 panel_message_ids = {}  # サーバーごとのパネルメッセージIDを保持
 latest_teams_per_guild = {}  # サーバーごとの直近のチーム分け結果を保持
 
@@ -77,6 +78,16 @@ def set_guild_mode(guild_id: int, mode: str):
   current_mode_per_guild[guild_id] = mode
 
 
+def get_guild_ps_notice(guild_id: int):
+  if guild_id not in ps_notice_per_guild:
+    ps_notice_per_guild[guild_id] = True  # デフォルトはON
+  return ps_notice_per_guild[guild_id]
+
+
+def set_guild_ps_notice(guild_id: int, status: bool):
+  ps_notice_per_guild[guild_id] = status
+
+
 # --- 参加者一覧・チーム結果のEmbed生成（複数Embed対応） ---
 def build_status_embeds(guild_id: int):
   participants = get_guild_participants(guild_id)
@@ -95,20 +106,20 @@ def build_status_embeds(guild_id: int):
 
   embeds = []
 
-  # 1. JOINパネル
+  # 1. JOINパネル（青: 0x3498DB）
   embed_join = discord.Embed(
-      title=f"JOIN ({len(active_list)}人)",
+      title=f"🟦 JOIN ({len(active_list)}人)",
       description="\n".join(active_list) if active_list else "なし",
-      color=0x2F3136,
+      color=0x3498DB,
   )
   embeds.append(embed_join)
 
-  # 2. AFKパネル（メンバーがいる場合のみ追加）
+  # 2. AFKパネル（メンバーがいる場合のみ追加 / 赤: 0xE74C3C）
   if afk_list:
     embed_afk = discord.Embed(
-        title=f"AFK ({len(afk_list)}人)",
+        title=f"🟥 AFK ({len(afk_list)}人)",
         description="\n".join(afk_list),
-        color=0x2F3136,
+        color=0xE74C3C,
     )
     embeds.append(embed_afk)
 
@@ -132,7 +143,7 @@ def build_status_embeds(guild_id: int):
 
     if team_data["excluded_user"]:
       embed_caster = discord.Embed(
-          title="キャスター",
+          title="🎙️ キャスター",
           description=f"{team_data['excluded_name']}さん (次回優先)",
           color=0x95A5A6,
       )
@@ -152,14 +163,24 @@ class RegistrationView(discord.ui.View):
       if user_id and user_id in participants:
         is_ps_on = participants[user_id].get("is_ps", False)
 
+      # 各ボタン・セレクトの動的ラベル調整
       for child in self.children:
-        if isinstance(child, discord.ui.Button) and child.custom_id == "btn_ps":
-          if is_ps_on:
-            child.label = "PlayStationで参加 (ON)"
-            child.style = discord.ButtonStyle.green
-          else:
-            child.label = "PlayStationで参加 (OFF)"
-            child.style = discord.ButtonStyle.gray
+        if isinstance(child, discord.ui.Button):
+          if child.custom_id == "btn_ps":
+            if is_ps_on:
+              child.label = "PlayStationで参加 (ON)"
+              child.style = discord.ButtonStyle.green
+            else:
+              child.label = "PlayStationで参加 (OFF)"
+              child.style = discord.ButtonStyle.gray
+          elif child.custom_id == "btn_ps_notice":
+            notice_on = get_guild_ps_notice(guild_id)
+            if notice_on:
+              child.label = "PS通知 (ON)"
+              child.style = discord.ButtonStyle.red
+            else:
+              child.label = "PS通知 (OFF)"
+              child.style = discord.ButtonStyle.gray
 
         elif isinstance(child, discord.ui.Select) and child.custom_id == "toggle_other_afk":
           if not participants:
@@ -261,6 +282,19 @@ class RegistrationView(discord.ui.View):
     else:
       participants[uid]["is_ps"] = not participants[uid]["is_ps"]
 
+    await refresh_panels(interaction, guild_id)
+
+  @discord.ui.button(
+      label="PS通知 (ON)",
+      style=discord.ButtonStyle.red,
+      custom_id="btn_ps_notice",
+  )
+  async def toggle_ps_notice(
+      self, interaction: discord.Interaction, button: discord.ui.Button
+  ):
+    guild_id = interaction.guild_id
+    current_status = get_guild_ps_notice(guild_id)
+    set_guild_ps_notice(guild_id, not current_status)
     await refresh_panels(interaction, guild_id)
 
   @discord.ui.button(
@@ -454,7 +488,7 @@ async def execute_team_split(channel, mode):
       else:
         team_b.append(chunk[0])
 
-  # ランクアイコンやメンションを省き、名前（太字）だけに整形
+  # 名前（太字）だけのシンプル表示に整形
   def format_team(team_list):
     lines = []
     for uid in team_list:
@@ -506,7 +540,8 @@ async def execute_team_split(channel, mode):
   await move_members(team_a, vc_a)
   await move_members(team_b, vc_b)
 
-  if ps_users_to_notify:
+  # PS通知がONのときだけ、手動移動の案内を送信する
+  if ps_users_to_notify and get_guild_ps_notice(guild_id):
     mentions = " ".join([f"{m.mention}" for m, _ in ps_users_to_notify])
     notice_text = f"{mentions} PlayStationで参加中の方は手動で指定のボイスチャンネルへ移動してください。"
     await channel.send(content=notice_text, delete_after=15)
