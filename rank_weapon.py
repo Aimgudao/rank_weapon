@@ -74,7 +74,7 @@ def set_guild_mode(guild_id: int, mode: str):
   current_mode_per_guild[guild_id] = mode
 
 
-# --- 状態表示の埋め込みメッセージ生成（参加者一覧を一番下に配置） ---
+# --- 状態表示の埋め込みメッセージ生成 ---
 def build_status_embed(guild_id: int):
   embed = discord.Embed(
       title="カスタムマッチ エントリーパネル",
@@ -97,21 +97,20 @@ def build_status_embed(guild_id: int):
     else:
       active_list.append(entry)
 
-  # ここで確実に一番下に表示されるようにJOINとAFKを配置
   embed.add_field(
-      name=f"🟢 JOIN ({len(active_list)}人)",
+      name=f"JOIN ({len(active_list)}人)",
       value="\n".join(active_list) if active_list else "なし",
       inline=False,
   )
   embed.add_field(
-      name=f"🟡 AFK ({len(afk_list)}人)",
+      name=f"AFK ({len(afk_list)}人)",
       value="\n".join(afk_list) if afk_list else "なし",
       inline=False,
   )
   return embed
 
 
-# --- セレクトメニューの選択肢を動的生成 ---
+# --- セレクトメニューの選択肢を動적生成 ---
 def get_member_select_options(guild_id: int):
   participants = get_guild_participants(guild_id)
   if not participants:
@@ -147,6 +146,7 @@ class RegistrationView(discord.ui.View):
       ):
         child.options = get_member_select_options(guild_id)
 
+  # 1. ランクを選択
   @discord.ui.select(
       placeholder="ランクを選択",
       options=[
@@ -181,6 +181,7 @@ class RegistrationView(discord.ui.View):
         embed=build_status_embed(guild_id), view=self
     )
 
+  # 2. 武器を選択
   @discord.ui.select(
       placeholder="武器を選択",
       options=[
@@ -214,6 +215,7 @@ class RegistrationView(discord.ui.View):
         embed=build_status_embed(guild_id), view=self
     )
 
+  # 3. PlayStationで参加
   @discord.ui.button(
       label="PlayStationで参加 (OFF)",
       style=discord.ButtonStyle.gray,
@@ -246,6 +248,7 @@ class RegistrationView(discord.ui.View):
         embed=build_status_embed(guild_id), view=self
     )
 
+  # 4. Active/AFK切り替え
   @discord.ui.button(
       label="Active / AFK",
       style=discord.ButtonStyle.blurple,
@@ -266,6 +269,21 @@ class RegistrationView(discord.ui.View):
         embed=build_status_embed(guild_id), view=self
     )
 
+  # 5. チームを編成開始ボタン
+  @discord.ui.button(
+      label="チームを編成",
+      style=discord.ButtonStyle.red,
+      custom_id="btn_match",
+  )
+  async def start_match(
+      self, interaction: discord.Interaction, button: discord.ui.Button
+  ):
+    view = MatchModeView()
+    await interaction.response.send_message(
+        "チーム分け基準を選択してください：", view=view, ephemeral=True
+    )
+
+  # 6. 管理（セレクトメニュー）
   @discord.ui.select(
       placeholder="管理",
       options=[discord.SelectOption(label="登録者がいません", value="none")],
@@ -294,19 +312,6 @@ class RegistrationView(discord.ui.View):
       )
     else:
       await interaction.response.defer()
-
-  @discord.ui.button(
-      label="チーム編成を開始",
-      style=discord.ButtonStyle.red,
-      custom_id="btn_match",
-  )
-  async def start_match(
-      self, interaction: discord.Interaction, button: discord.ui.Button
-  ):
-    view = MatchModeView()
-    await interaction.response.send_message(
-        "チーム分け基準を選択してください：", view=view, ephemeral=True
-    )
 
 
 class MatchModeView(discord.ui.View):
