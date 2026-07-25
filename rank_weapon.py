@@ -74,10 +74,10 @@ def set_guild_mode(guild_id: int, mode: str):
   current_mode_per_guild[guild_id] = mode
 
 
-# --- 状態表示の埋め込みメッセージ生成 ---
+# --- 状態表示の埋め込みメッセージ生成（一番下にJOIN/AFKリストを表示） ---
 def build_status_embed(guild_id: int):
   embed = discord.Embed(title="カスタムマッチ エントリーパネル", color=0x2f3136)
-  embed.description = "参加状況と管理パネル"
+  embed.description = "ランク・武器・ステータスを選択して参加してください。"
 
   participants = get_guild_participants(guild_id)
   active_list = []
@@ -87,7 +87,6 @@ def build_status_embed(guild_id: int):
     ps_str = "🎮【PS】" if data["is_ps"] else ""
     rank_info = RANKS.get(data["rank"], {"color": "⚪"})
 
-    # 視認性を高めたフォーマット
     entry = f"{rank_info['color']} **{data['name']}** [ {data['weapon']} ] {ps_str}"
 
     if data["is_afk"]:
@@ -95,6 +94,7 @@ def build_status_embed(guild_id: int):
     else:
       active_list.append(entry)
 
+  # 一番下に表示されるように最後にフィールドを追加
   embed.add_field(
       name=f"JOIN ({len(active_list)}人)",
       value="\n".join(active_list) if active_list else "なし",
@@ -511,10 +511,8 @@ def run_web():
 
 
 if __name__ == "__main__":
-  # 1. まずFlaskサーバーを別スレッドで完全に独立して起動させる
   web_thread = threading.Thread(target=run_web)
   web_thread.daemon = True
   web_thread.start()
 
-  # 2. その後、Discordボットを起動する
   bot.run(TOKEN)
