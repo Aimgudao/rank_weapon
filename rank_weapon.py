@@ -31,9 +31,10 @@ WEAPONS = ["AR", "SMG", "Flex", "SR"]
 participants_per_guild = {}
 priority_pool_per_guild = {}
 current_mode_per_guild = {}
-ps_notice_per_guild = {}  # サーバーごとのPS通知（テキスト＆音声読み上げ）設定（デフォルトTrue: ON）
-panel_message_ids = {}  # サーバーごとのパネルメッセージIDを保持
-latest_teams_per_guild = {}  # サーバーごとの直近のチーム分け結果を保持
+ps_notice_per_guild = {}  # サーバーごとのPS通知設定（デフォルトTrue: ON）
+panel_message_ids = {}  # ステータスパネルのメッセージID
+control_message_ids = {}  # 操作ボタンパネルのメッセージID
+latest_teams_per_guild = {}  # 直近のチーム分け結果を保持
 
 
 class CustomMatchBot(commands.Bot):
@@ -106,7 +107,7 @@ def build_status_embeds(guild_id: int):
 
   embeds = []
 
-  # 1. JOINパネル（ダークグレー: 0x2F3136）
+  # 1. JOINパネル
   embed_join = discord.Embed(
       title=f"JOIN ({len(active_list)}人)",
       description="\n".join(active_list) if active_list else "なし",
@@ -114,7 +115,7 @@ def build_status_embeds(guild_id: int):
   )
   embeds.append(embed_join)
 
-  # 2. AFKパネル（メンバーがいる場合のみ追加 / ダークグレー: 0x2F3136）
+  # 2. AFKパネル
   if afk_list:
     embed_afk = discord.Embed(
         title=f"AFK ({len(afk_list)}人)",
@@ -123,11 +124,10 @@ def build_status_embeds(guild_id: int):
     )
     embeds.append(embed_afk)
 
-  # 3. チーム分け結果パネル（結果が存在する場合）
+  # 3. チーム分け結果パネル
   if guild_id in latest_teams_per_guild:
     team_data = latest_teams_per_guild[guild_id]
     
-    # チームA（青: 0x3498DB）
     embed_team_a = discord.Embed(
         title="🟦 チームA",
         description=team_data["team_a_str"] if team_data["team_a_str"] else "なし",
@@ -135,7 +135,6 @@ def build_status_embeds(guild_id: int):
     )
     embeds.append(embed_team_a)
 
-    # チームB（赤: 0xE74C3C）
     embed_team_b = discord.Embed(
         title="🟥 チームB",
         description=team_data["team_b_str"] if team_data["team_b_str"] else "なし",
@@ -189,9 +188,8 @@ class RegistrationView(discord.ui.View):
           else:
             options = []
             for uid, data in participants.items():
-              state_text = "AFK" if data["is_afk"] else "Active"
-              action_text = "→Active" if data["is_afk"] else "→AFK"
-              label = f"{data['name']} ({state_text} {action_text})"
+              state_emoji = "🟡" if data["is_afk"] else "🟢"
+              label = f"{state_emoji} {data['name']}"
               if len(label) > 100:
                 label = label[:97] + "..."
               options.append(discord.SelectOption(label=label, value=str(uid)))
@@ -331,20 +329,13 @@ class RegistrationView(discord.ui.View):
   async def start_match(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    guild_id = interaction.guild_id
-    if guild_id in latest_teams_per_guild:
-      current_mode = get_guild_mode(guild_id)
-      if not interaction.response.is_done():
-        await interaction.response.defer()
-      await execute_team_split(interaction.channel, current_mode)
-    else:
-      view = MatchModeView()
-      await interaction.response.send_message(
-          "チーム分け基準を選択してください：", view=view, ephemeral=True
-      )
+    view = MatchModeView()
+    await interaction.response.send_message(
+        "チーム分け基準を選択してください：", view=view, ephemeral=True
+    )
 
   @discord.ui.select(
-      placeholder="管理",
+      placeholder="管理（メンバーの状態切替）",
       options=[discord.SelectOption(label="登録者がいません", value="none")],
       custom_id="toggle_other_afk",
   )
@@ -373,20 +364,20 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
     try:
       msg_id = panel_message_ids[guild_id]
       status_msg = await interaction.channel.fetch_message(msg_id)
-      await status_msg.edit(
-          embeds=build_status_embeds(guild_id), view=None
-      )
+      await status_msg.edit(embeds=build_status_embeds(guild_id))
     except (discord.NotFound, discord.HTTPException):
       pass
 
   new_view = RegistrationView(guild_id, interaction.user.id)
-  try:
-    if interaction.response.is_done():
-      await interaction.edit_original_response(content="\u200b", view=new_view)
-    else:
-      await interaction.response.edit_message(content="\u200b", view=new_view)
-  except discord.HTTPException:
-    pass
+  if guild_id in control_message_ids:
+    try:
+      ctrl_msg = await interaction.channel.fetch_message(control_message_ids[guild_id])
+      await ctrl_msg.edit(view=new_view)
+    except (discord.NotFound, discord.HTTPException):
+      pass
+
+  if not interaction.response.is_done():
+    await interaction.response.defer()
 
 
 class MatchModeView(discord.ui.View):
@@ -489,7 +480,6 @@ async def execute_team_split(channel, mode):
       else:
         team_b.append(chunk[0])
 
-  # 名前（太字）だけのシンプル表示に整形
   def format_team(team_list):
     lines = []
     for uid in team_list:
@@ -508,19 +498,28 @@ async def execute_team_split(channel, mode):
     try:
       msg_id = panel_message_ids[guild_id]
       status_msg = await channel.fetch_message(msg_id)
-      await status_msg.edit(
-          embeds=build_status_embeds(guild_id), view=None
-      )
+      await status_msg.edit(embeds=build_status_embeds(guild_id))
     except (discord.NotFound, discord.HTTPException):
       pass
 
-  # --- VC移動処理 ---
+  # --- VCスマート検索＆移動処理 ---
   voice_channels = sorted(guild.voice_channels, key=lambda c: c.position)
   if len(voice_channels) < 2:
     return
 
+  # デフォルト（見つからない場合の上位2つ）
   vc_a = voice_channels[0]
   vc_b = voice_channels[1]
+
+  # チャンネル名から「チームA」「チームB」に関連する部屋を賢く探す
+  for vc in voice_channels:
+    name_lower = vc.name.lower()
+    if any(k in name_lower for k in ["チームa", "team a", "aチーム", "🔵", "赤"]):
+      if "a" in name_lower:
+        vc_a = vc
+    elif any(k in name_lower for k in ["チームb", "team b", "bチーム", "🔴", "青"]):
+      if "b" in name_lower:
+        vc_b = vc
 
   ps_users_to_notify = []
 
@@ -541,11 +540,11 @@ async def execute_team_split(channel, mode):
   await move_members(team_a, vc_a)
   await move_members(team_b, vc_b)
 
-  # PS通知がONのときだけ、手動移動の案内をテキスト＆音声読み上げ（tts=True）で送信する
+  # PS通知がONのときだけテキストで通知（音声読み上げなし）
   if ps_users_to_notify and get_guild_ps_notice(guild_id):
     mentions = " ".join([f"{m.mention}" for m, _ in ps_users_to_notify])
     notice_text = f"{mentions} PlayStationで参加中の方は手動で指定のボイスチャンネルへ移動してください。"
-    await channel.send(content=notice_text, tts=True, delete_after=15)
+    await channel.send(content=notice_text, delete_after=15)
 
 
 # --- /カスタムマッチ コマンド ---
@@ -556,6 +555,7 @@ async def execute_team_split(channel, mode):
 async def cmd_custom_match(interaction: discord.Interaction):
   guild_id = interaction.guild_id
   
+  # 過去のステータスパネルを削除
   if guild_id in panel_message_ids:
     try:
       old_msg = await interaction.channel.fetch_message(panel_message_ids[guild_id])
@@ -563,21 +563,32 @@ async def cmd_custom_match(interaction: discord.Interaction):
     except (discord.NotFound, discord.HTTPException):
       pass
 
+  # 過去の操作ボタンパネルを削除
+  if guild_id in control_message_ids:
+    try:
+      old_ctrl = await interaction.channel.fetch_message(control_message_ids[guild_id])
+      await old_ctrl.delete()
+    except (discord.NotFound, discord.HTTPException):
+      pass
+
+  # データを完全にリセット
   participants = get_guild_participants(guild_id)
   participants.clear()
   set_guild_priority(guild_id, [])
   if guild_id in latest_teams_per_guild:
     del latest_teams_per_guild[guild_id]
 
-  view = RegistrationView(guild_id, interaction.user.id)
-  await interaction.response.send_message(content="\u200b", view=view)
+  await interaction.response.defer(ephemeral=True)
 
+  # 新しいステータスパネルを送信
   status_embeds = build_status_embeds(guild_id)
-  status_msg = await interaction.channel.send(
-      embeds=status_embeds, view=None
-  )
-
+  status_msg = await interaction.channel.send(embeds=status_embeds)
   panel_message_ids[guild_id] = status_msg.id
+
+  # 新しい操作ボタンパネルを送信
+  view = RegistrationView(guild_id, interaction.user.id)
+  control_msg = await interaction.channel.send(content="\u200b", view=view)
+  control_message_ids[guild_id] = control_msg.id
 
 
 # --- Renderのスリープ防止用簡易Webサーバー ---
