@@ -98,9 +98,7 @@ def build_status_embeds(guild_id: int):
   for uid, data in participants.items():
     ps_str = "🎮【PS】" if data["is_ps"] else ""
     rank_info = RANKS.get(data["rank"], {"color": "⚪"})
-    # 名前は右側に緑/黄の丸を表示
-    state_emoji = "🟡" if data["is_afk"] else "🟢"
-    entry = f"{rank_info['color']} **{data['name']}** {state_emoji} [ {data['weapon']} ] {ps_str}"
+    entry = f"{rank_info['color']} **{data['name']}** [ {data['weapon']} ] {ps_str}"
 
     if data["is_afk"]:
       afk_list.append(entry)
@@ -191,7 +189,6 @@ class RegistrationView(discord.ui.View):
             options = []
             for uid, data in participants.items():
               state_emoji = "🟡" if data["is_afk"] else "🟢"
-              # 管理プルダウンでも名前の右側に状態アイコン
               label = f"{data['name']} {state_emoji}"
               if len(label) > 100:
                 label = label[:97] + "..."
@@ -260,26 +257,6 @@ class RegistrationView(discord.ui.View):
       participants[uid]["weapon"] = select.values[0]
 
     await refresh_panels(interaction, guild_id)
-
-  @discord.ui.select(
-      placeholder="チーム編成の基準を選択して実行",
-      options=[
-          discord.SelectOption(label="ランク＆武器", value="both"),
-          discord.SelectOption(label="ランク", value="rank"),
-          discord.SelectOption(label="武器", value="weapon"),
-          discord.SelectOption(label="ランダム", value="random"),
-      ],
-      custom_id="select_match_mode",
-  )
-  async def select_match_mode(
-      self, interaction: discord.Interaction, select: discord.ui.Select
-  ):
-    guild_id = interaction.guild_id
-    mode = select.values[0]
-    set_guild_mode(guild_id, mode)
-    if not interaction.response.is_done():
-      await interaction.response.defer()
-    await execute_team_split(interaction.channel, mode)
 
   @discord.ui.button(
       label="PlayStationで参加 (OFF)",
@@ -366,6 +343,26 @@ class RegistrationView(discord.ui.View):
       await refresh_panels(interaction, guild_id)
     else:
       await interaction.response.defer()
+
+  @discord.ui.select(
+      placeholder="チーム編成/再編成",
+      options=[
+          discord.SelectOption(label="ランク＆武器", value="both"),
+          discord.SelectOption(label="ランク", value="rank"),
+          discord.SelectOption(label="武器", value="weapon"),
+          discord.SelectOption(label="ランダム", value="random"),
+      ],
+      custom_id="select_match_mode",
+  )
+  async def select_match_mode(
+      self, interaction: discord.Interaction, select: discord.ui.Select
+  ):
+    guild_id = interaction.guild_id
+    mode = select.values[0]
+    set_guild_mode(guild_id, mode)
+    if not interaction.response.is_done():
+      await interaction.response.defer()
+    await execute_team_split(interaction.channel, mode)
 
 
 # --- パネル全体を更新する共通関数 ---
