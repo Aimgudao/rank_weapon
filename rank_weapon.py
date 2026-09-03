@@ -29,6 +29,7 @@ WEAPONS = ["AR", "SMG", "Flex", "SR"]
 
 # --- データ管理用グローバル変数 ---
 participants_per_guild = {}
+temp_selections_per_guild = {}  # 未登録ユーザーの一時選択状態保持用
 priority_pool_per_guild = {}
 current_mode_per_guild = {}
 ps_notice_per_guild = {}  # サーバーごとのPS通知設定（デフォルトTrue: ON）
@@ -326,25 +327,43 @@ class RegistrationView(discord.ui.View):
   async def select_rank(
       self, interaction: discord.Interaction, select: discord.ui.Select
   ):
-    # ★即座に応答してカクつきをなくす
     await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild_id
-    participants = get_guild_participants(guild_id)
     uid = interaction.user.id
-
-    if uid not in participants:
-      participants[uid] = {
-          "name": interaction.user.display_name,
-          "rank": select.values[0],
-          "weapon": "AR",
-          "is_ps": False,
-          "is_afk": False,
-      }
-    else:
-      participants[uid]["rank"] = select.values[0]
-
+    selected_rank = select.values[0]
     select.values = []
-    await refresh_panels(interaction, guild_id)
+
+    participants = get_guild_participants(guild_id)
+
+    if uid in participants:
+      # すでに登録済みの場合はランクを即時変更
+      participants[uid]["rank"] = selected_rank
+      await refresh_panels(interaction, guild_id)
+      await interaction.followup.send(f"ランクを **{selected_rank}** に変更しました。", ephemeral=True)
+    else:
+      # 未登録の場合は一時保存し、両方揃ったら登録
+      if guild_id not in temp_selections_per_guild:
+        temp_selections_per_guild[guild_id] = {}
+      if uid not in temp_selections_per_guild[guild_id]:
+        temp_selections_per_guild[guild_id][uid] = {"rank": None, "weapon": None}
+
+      temp_selections_per_guild[guild_id][uid]["rank"] = selected_rank
+      current_weapon = temp_selections_per_guild[guild_id][uid]["weapon"]
+
+      if current_weapon is not None:
+        # ランク・武器の両方が揃ったため正式登録
+        participants[uid] = {
+            "name": interaction.user.display_name,
+            "rank": selected_rank,
+            "weapon": current_weapon,
+            "is_ps": False,
+            "is_afk": False,
+        }
+        del temp_selections_per_guild[guild_id][uid]
+        await refresh_panels(interaction, guild_id)
+        await interaction.followup.send("ランクと武器が選択されたため、参加登録が完了しました！", ephemeral=True)
+      else:
+        await interaction.followup.send(f"ランク（{selected_rank}）を記憶しました。次に**武器**を選択してください。", ephemeral=True)
 
   @discord.ui.select(
       placeholder="武器を選択",
@@ -359,25 +378,43 @@ class RegistrationView(discord.ui.View):
   async def select_weapon(
       self, interaction: discord.Interaction, select: discord.ui.Select
   ):
-    # ★即座に応答してカクつきをなくす
     await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild_id
-    participants = get_guild_participants(guild_id)
     uid = interaction.user.id
-
-    if uid not in participants:
-      participants[uid] = {
-          "name": interaction.user.display_name,
-          "rank": "ゴールド",
-          "weapon": select.values[0],
-          "is_ps": False,
-          "is_afk": False,
-      }
-    else:
-      participants[uid]["weapon"] = select.values[0]
-
+    selected_weapon = select.values[0]
     select.values = []
-    await refresh_panels(interaction, guild_id)
+
+    participants = get_guild_participants(guild_id)
+
+    if uid in participants:
+      # すでに登録済みの場合は武器を即時変更
+      participants[uid]["weapon"] = selected_weapon
+      await refresh_panels(interaction, guild_id)
+      await interaction.followup.send(f"武器を **{selected_weapon}** に変更しました。", ephemeral=True)
+    else:
+      # 未登録の場合は一時保存し、両方揃ったら登録
+      if guild_id not in temp_selections_per_guild:
+        temp_selections_per_guild[guild_id] = {}
+      if uid not in temp_selections_per_guild[guild_id]:
+        temp_selections_per_guild[guild_id][uid] = {"rank": None, "weapon": None}
+
+      temp_selections_per_guild[guild_id][uid]["weapon"] = selected_weapon
+      current_rank = temp_selections_per_guild[guild_id][uid]["rank"]
+
+      if current_rank is not None:
+        # ランク・武器の両方が揃ったため正式登録
+        participants[uid] = {
+            "name": interaction.user.display_name,
+            "rank": current_rank,
+            "weapon": selected_weapon,
+            "is_ps": False,
+            "is_afk": False,
+        }
+        del temp_selections_per_guild[guild_id][uid]
+        await refresh_panels(interaction, guild_id)
+        await interaction.followup.send("ランクと武器が選択されたため、参加登録が完了しました！", ephemeral=True)
+      else:
+        await interaction.followup.send(f"武器（{selected_weapon}）を記憶しました。次に**ランク**を選択してください。", ephemeral=True)
 
   @discord.ui.button(
       label="PlayStationで参加 (OFF)",
@@ -392,18 +429,13 @@ class RegistrationView(discord.ui.View):
     participants = get_guild_participants(guild_id)
     uid = interaction.user.id
 
-    if uid not in participants:
-      participants[uid] = {
-          "name": interaction.user.display_name,
-          "rank": "ゴールド",
-          "weapon": "AR",
-          "is_ps": True,
-          "is_afk": False,
-      }
-    else:
+    if uid in participants:
       participants[uid]["is_ps"] = not participants[uid]["is_ps"]
-
-    await refresh_panels(interaction, guild_id)
+      await refresh_panels(interaction, guild_id)
+      ps_state = "ON" if participants[uid]["is_ps"] else "OFF"
+      await interaction.followup.send(f"PlayStation参加設定を **{ps_state}** に変更しました。", ephemeral=True)
+    else:
+      await interaction.followup.send("先にランクと武器を選択して参加登録を完了させてください。", ephemeral=True)
 
   @discord.ui.button(
       label="PS通知 (ON)",
@@ -434,16 +466,11 @@ class RegistrationView(discord.ui.View):
 
     if uid in participants:
       participants[uid]["is_afk"] = not participants[uid]["is_afk"]
+      await refresh_panels(interaction, guild_id)
+      status_str = "AFK" if participants[uid]["is_afk"] else "Active"
+      await interaction.followup.send(f"状態を **{status_str}** に変更しました。", ephemeral=True)
     else:
-      participants[uid] = {
-          "name": interaction.user.display_name,
-          "rank": "ゴールド",
-          "weapon": "AR",
-          "is_ps": False,
-          "is_afk": True,
-      }
-
-    await refresh_panels(interaction, guild_id)
+      await interaction.followup.send("先にランクと武器を選択して参加登録を完了させてください。", ephemeral=True)
 
   @discord.ui.select(
       placeholder="管理 (メンバーを選択して編集)",
@@ -691,6 +718,8 @@ async def cmd_custom_match(interaction: discord.Interaction):
 
   participants = get_guild_participants(guild_id)
   participants.clear()
+  if guild_id in temp_selections_per_guild:
+    temp_selections_per_guild[guild_id].clear()
   set_guild_priority(guild_id, [])
   if guild_id in latest_teams_per_guild:
     del latest_teams_per_guild[guild_id]
