@@ -153,77 +153,92 @@ def build_status_embeds(guild_id: int):
   return embeds
 
 
-# --- 管理・編集用モーダルクラス ---
-class AdminEditModal(discord.ui.Modal, title="参加者情報の管理・編集"):
-  def __init__(self, guild_id: int, target_uid: int, target_data: dict):
-    super().__init__()
+# --- 管理用インタラクティブビュー（モーダルの代わりにポップアップでボタン・セレクトによる完全クリック操作を提供） ---
+class AdminControlView(discord.ui.View):
+  def __init__(self, guild_id: int, target_uid: int):
+    super().__init__(timeout=180)
     self.guild_id = guild_id
     self.target_uid = target_uid
+    self.update_components()
 
-    self.rank_input = discord.ui.TextInput(
-        label="ランク (レインボー/クリムゾン/ダイヤ/プラチナ/ゴールド)",
-        default=target_data.get("rank", "ゴールド"),
-        max_length=10,
-    )
-    self.add_item(self.rank_input)
-
-    self.weapon_input = discord.ui.TextInput(
-        label="武器 (AR / SMG / Flex / SR)",
-        default=target_data.get("weapon", "AR"),
-        max_length=10,
-    )
-    self.add_item(self.weapon_input)
-
-    current_status = "AFK" if target_data.get("is_afk", False) else "Active"
-    self.afk_input = discord.ui.TextInput(
-        label="状態 (Active または AFK)",
-        default=current_status,
-        max_length=10,
-    )
-    self.add_item(self.afk_input)
-
-    current_ps = "ON" if target_data.get("is_ps", False) else "OFF"
-    self.ps_input = discord.ui.TextInput(
-        label="PS参加 (ON または OFF)",
-        default=current_ps,
-        max_length=5,
-    )
-    self.add_item(self.ps_input)
-
-  async def on_submit(self, interaction: discord.Interaction):
-    guild_id = self.guild_id
-    participants = get_guild_participants(guild_id)
-
+  def update_components(self):
+    participants = get_guild_participants(self.guild_id)
     if self.target_uid not in participants:
-      await interaction.response.send_message("対象のユーザーが見つかりませんでした。", ephemeral=True)
       return
+    data = participants[self.target_uid]
 
-    # 1. ランクの更新
-    new_rank = self.rank_input.value.strip()
-    if new_rank in RANKS:
-      participants[self.target_uid]["rank"] = new_rank
+    # ボタンのラベルやスタイルを現在の状態に合わせる
+    for child in self.children:
+      if isinstance(child, discord.ui.Button):
+        if child.custom_id == "admin_toggle_afk":
+          if data["is_afk"]:
+            child.label = "状態: AFK (クリックでActiveへ)"
+            child.style = discord.ButtonStyle.danger
+          else:
+            child.label = "状態: Active (クリックでAFKへ)"
+            child.style = discord.ButtonStyle.success
+        elif child.custom_id == "admin_toggle_ps":
+          if data["is_ps"]:
+            child.label = "PS参加: ON (クリックでOFFへ)"
+            child.style = discord.ButtonStyle.green
+          else:
+            child.label = "PS参加: OFF (クリックでONへ)"
+            child.style = discord.ButtonStyle.gray
 
-    # 2. 武器の更新
-    new_weapon = self.weapon_input.value.strip()
-    if new_weapon in WEAPONS:
-      participants[self.target_uid]["weapon"] = new_weapon
+  @discord.ui.select(
+      placeholder="ランクを変更",
+      options=[
+          discord.SelectOption(label="🟣 レインボー", value="レインボー"),
+          discord.SelectOption(label="🔴 クリムゾン", value="クリムゾン"),
+          discord.SelectOption(label="🔵 ダイヤモンド", value="ダイヤモンド"),
+          discord.SelectOption(label="🟢 プラチナ", value="プラチナ"),
+          discord.SelectOption(label="🟡 ゴールド", value="ゴールド"),
+      ],
+      custom_id="admin_select_rank"
+  )
+  async def admin_select_rank(self, interaction: discord.Interaction, select: discord.ui.Select):
+    participants = get_guild_participants(self.guild_id)
+    if self.target_uid in participants:
+      participants[self.target_uid]["rank"] = select.values[0]
+      await refresh_panels(interaction, self.guild_id)
+      await interaction.response.edit_message(content=f"**{participants[self.target_uid]['name']}** のランクを **{select.values[0]}** に変更しました。", view=self)
 
-    # 3. Active / AFK の更新
-    new_afk = self.afk_input.value.strip()
-    if new_afk in ["AFK", "afk", "True", "true", "ＡＦＫ"]:
-      participants[self.target_uid]["is_afk"] = True
-    elif new_afk in ["Active", "active", "False", "false", "アクティブ"]:
-      participants[self.target_uid]["is_afk"] = False
+  @discord.ui.select(
+      placeholder="武器を変更",
+      options=[
+          discord.SelectOption(label="アサルトライフル (AR)", value="AR"),
+          discord.SelectOption(label="サブマシンガン (SMG)", value="SMG"),
+          discord.SelectOption(label="フレックス (AR/SMG)", value="Flex"),
+          discord.SelectOption(label="スナイパー (SR)", value="SR"),
+      ],
+      custom_id="admin_select_weapon"
+  )
+  async def admin_select_weapon(self, interaction: discord.Interaction, select: discord.ui.Select):
+    participants = get_guild_participants(self.guild_id)
+    if self.target_uid in participants:
+      participants[self.target_uid]["weapon"] = select.values[0]
+      await refresh_panels(interaction, self.guild_id)
+      await interaction.response.edit_message(content=f"**{participants[self.target_uid]['name']}** の武器を **{select.values[0]}** に変更しました。", view=self)
 
-    # 4. PS参加の更新
-    new_ps = self.ps_input.value.strip()
-    if new_ps in ["ON", "on", "True", "true", "ＯＮ"]:
-      participants[self.target_uid]["is_ps"] = True
-    elif new_ps in ["OFF", "off", "False", "false", "ＯＦＦ"]:
-      participants[self.target_uid]["is_ps"] = False
+  @discord.ui.button(label="状態切替", style=discord.ButtonStyle.blurple, custom_id="admin_toggle_afk")
+  async def admin_toggle_afk(self, interaction: discord.Interaction, button: discord.ui.Button):
+    participants = get_guild_participants(self.guild_id)
+    if self.target_uid in participants:
+      participants[self.target_uid]["is_afk"] = not participants[self.target_uid]["is_afk"]
+      self.update_components()
+      await refresh_panels(interaction, self.guild_id)
+      status_str = "AFK" if participants[self.target_uid]["is_afk"] else "Active"
+      await interaction.response.edit_message(content=f"**{participants[self.target_uid]['name']}** の状態を **{status_str}** に変更しました。", view=self)
 
-    await interaction.response.defer()
-    await refresh_panels(interaction, guild_id)
+  @discord.ui.button(label="PS参加切替", style=discord.ButtonStyle.gray, custom_id="admin_toggle_ps")
+  async def admin_toggle_ps(self, interaction: discord.Interaction, button: discord.ui.Button):
+    participants = get_guild_participants(self.guild_id)
+    if self.target_uid in participants:
+      participants[self.target_uid]["is_ps"] = not participants[self.target_uid]["is_ps"]
+      self.update_components()
+      await refresh_panels(interaction, self.guild_id)
+      ps_str = "ON" if participants[self.target_uid]["is_ps"] else "OFF"
+      await interaction.response.edit_message(content=f"**{participants[self.target_uid]['name']}** のPS参加を **{ps_str}** に変更しました。", view=self)
 
 
 # --- 動的にボタン状態や選択肢を調整するビュークラス（操作パネル用） ---
@@ -413,9 +428,13 @@ class RegistrationView(discord.ui.View):
     target_uid = int(selected_val)
     if target_uid in participants:
       target_data = participants[target_uid]
-      # 選択されたユーザーの現在の設定が入ったモーダルを表示
-      modal = AdminEditModal(guild_id, target_uid, target_data)
-      await interaction.response.send_modal(modal)
+      # メンバーが選択されたら、文字入力を一切使わずクリックだけで全変更できる専用パネル（ephemeralメッセージ）を表示
+      view = AdminControlView(guild_id, target_uid)
+      await interaction.response.send_message(
+          content=f"⚙️ **{target_data['name']}** の管理メニュー（ボタンやプルダウンをクリックして変更してください）",
+          view=view,
+          ephemeral=True
+      )
     else:
       await interaction.response.send_message("対象ユーザーが存在しません。", ephemeral=True)
 
@@ -461,7 +480,10 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
       pass
 
   if not interaction.response.is_done():
-    await interaction.response.defer()
+    try:
+      await interaction.response.defer()
+    except discord.InteractionResponded:
+      pass
 
 
 # --- チーム分けロジック & パネル上書き更新 ---
