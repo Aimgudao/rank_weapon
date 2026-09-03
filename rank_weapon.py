@@ -255,7 +255,6 @@ class AdminControlView(discord.ui.View):
 
   @discord.ui.button(label="✅ 完了（閉じる）", style=discord.ButtonStyle.green, custom_id="admin_done")
   async def admin_done(self, interaction: discord.Interaction, button: discord.ui.Button):
-    # 完了ボタンを押したら自分だけのポップアップ画面をまるごと削除する
     await interaction.response.defer()
     try:
       await interaction.delete_original_response()
@@ -443,8 +442,10 @@ class RegistrationView(discord.ui.View):
     participants = get_guild_participants(guild_id)
 
     selected_val = select.values[0]
+    select.values = []  # 選択状態をリセット
     if selected_val == "none":
-      await interaction.response.defer()
+      if not interaction.response.is_done():
+        await interaction.response.defer()
       return
 
     target_uid = int(selected_val)
@@ -474,6 +475,10 @@ class RegistrationView(discord.ui.View):
   ):
     guild_id = interaction.guild_id
     mode = select.values[0]
+    
+    # ★同じ項目を連続で選んでもイベントが必ず発火するように選択状態をクリア
+    select.values = []
+    
     set_guild_mode(guild_id, mode)
     if not interaction.response.is_done():
       await interaction.response.defer()
@@ -493,7 +498,6 @@ async def refresh_panels_from_admin(interaction: discord.Interaction, guild_id: 
   if guild_id in panel_message_ids:
     try:
       ctrl_msg = await interaction.channel.fetch_message(panel_message_ids[guild_id])
-      # 登録パネル側のセレクト選択肢（AFKメンバー一覧など）を更新するため
       new_reg_view = RegistrationView(guild_id, interaction.user.id)
       await ctrl_msg.edit(view=new_reg_view)
     except (discord.NotFound, discord.HTTPException):
@@ -535,7 +539,10 @@ async def execute_team_split(channel, mode):
   pool = [uid for uid, data in participants.items() if not data["is_afk"]]
 
   if len(pool) < 2:
-    await channel.send("参加者が足りません (最低2人必要)", delete_after=5)
+    try:
+      await channel.send("参加者が足りません (最低2人必要)", delete_after=5)
+    except discord.HTTPException:
+      pass
     return
 
   excluded_user = None
@@ -646,7 +653,10 @@ async def execute_team_split(channel, mode):
   if ps_users_to_notify and get_guild_ps_notice(guild_id):
     mentions = " ".join([f"{m.mention}" for m, _ in ps_users_to_notify])
     notice_text = f"{mentions} PlayStationで参加中の方は手動で指定のボイスチャンネルへ移動してください。"
-    await channel.send(content=notice_text, delete_after=15)
+    try:
+      await channel.send(content=notice_text, delete_after=15)
+    except discord.HTTPException:
+      pass
 
 
 # --- /カスタムマッチ コマンド ---
