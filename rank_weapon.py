@@ -445,8 +445,6 @@ class RegistrationView(discord.ui.View):
     participants = get_guild_participants(guild_id)
 
     selected_val = select.values[0]
-    select.values = []  # 選択状態をリセット
-    
     if selected_val == "none":
       return
 
@@ -486,8 +484,9 @@ class RegistrationView(discord.ui.View):
     # チーム分けやVC移動を実行
     await execute_team_split(interaction.channel, mode)
 
-    # 処理がすべて終わった最後尾で選択状態をクリア
-    select.values = []
+    # チーム編成メニュー側だけ、処理終了後にビューを更新してチェックマークを消す
+    new_view = RegistrationView(guild_id, interaction.user.id)
+    await interaction.message.edit(view=new_view)
 
 
 # --- 管理ポップアップからの更新用関数 ---
