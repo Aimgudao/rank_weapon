@@ -438,27 +438,29 @@ class RegistrationView(discord.ui.View):
   async def toggle_other_afk(
       self, interaction: discord.Interaction, select: discord.ui.Select
   ):
+    if not interaction.response.is_done():
+      await interaction.response.defer(ephemeral=True)
+
     guild_id = interaction.guild_id
     participants = get_guild_participants(guild_id)
 
     selected_val = select.values[0]
     select.values = []  # 選択状態をリセット
+    
     if selected_val == "none":
-      if not interaction.response.is_done():
-        await interaction.response.defer()
       return
 
     target_uid = int(selected_val)
     if target_uid in participants:
       target_data = participants[target_uid]
       view = AdminControlView(guild_id, target_uid)
-      await interaction.response.send_message(
+      await interaction.followup.send(
           content=f"⚙️ **{target_data['name']}** の管理メニュー（あなただけに表示されています。変更後は下の **【✅ 完了（閉じる）】** ボタンを押してください）",
           view=view,
           ephemeral=True
       )
     else:
-      await interaction.response.send_message("対象ユーザーが存在しません。", ephemeral=True)
+      await interaction.followup.send("対象ユーザーが存在しません。", ephemeral=True)
 
   @discord.ui.select(
       placeholder="チーム編成/再編成",
@@ -473,16 +475,19 @@ class RegistrationView(discord.ui.View):
   async def select_match_mode(
       self, interaction: discord.Interaction, select: discord.ui.Select
   ):
+    if not interaction.response.is_done():
+      await interaction.response.defer(ephemeral=True)
+
     guild_id = interaction.guild_id
     mode = select.values[0]
     
-    # ★同じ項目を連続で選んでもイベントが必ず発火するように選択状態をクリア
-    select.values = []
-    
     set_guild_mode(guild_id, mode)
-    if not interaction.response.is_done():
-      await interaction.response.defer()
+
+    # チーム分けやVC移動を実行
     await execute_team_split(interaction.channel, mode)
+
+    # 処理がすべて終わった最後尾で選択状態をクリア
+    select.values = []
 
 
 # --- 管理ポップアップからの更新用関数 ---
