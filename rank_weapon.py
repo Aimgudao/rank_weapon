@@ -457,6 +457,16 @@ class RegistrationView(discord.ui.View):
           view=view,
           ephemeral=True
       )
+      
+      # 管理メニューを開いたタイミングで、メインパネル側のビューを再設定してチェックマークを消す
+      if guild_id in panel_message_ids:
+        try:
+          ctrl_msg = await interaction.channel.fetch_message(panel_message_ids[guild_id])
+          new_reg_view = RegistrationView(guild_id, interaction.user.id)
+          await ctrl_msg.edit(view=new_reg_view)
+        except (discord.NotFound, discord.HTTPException):
+          pass
+
     else:
       await interaction.followup.send("対象ユーザーが存在しません。", ephemeral=True)
 
