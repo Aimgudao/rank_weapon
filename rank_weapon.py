@@ -199,10 +199,11 @@ class AdminControlView(discord.ui.View):
     participants = get_guild_participants(self.guild_id)
     if self.target_uid in participants:
       participants[self.target_uid]["rank"] = select.values[0]
+      select.values = []  # 連続選択できるように選択状態をリセット
       await refresh_panels_from_admin(interaction, self.guild_id)
       self.update_components()
       await interaction.response.edit_message(
-          content=f"⚙️ **{participants[self.target_uid]['name']}** のランクを **{select.values[0]}** に変更しました。（続けて他の変更も可能です）",
+          content=f"⚙️ **{participants[self.target_uid]['name']}** のランクを **{select.values[0] if select.values else participants[self.target_uid]['rank']}** に変更しました。（続けて他の変更も可能です）",
           view=self
       )
 
@@ -220,10 +221,11 @@ class AdminControlView(discord.ui.View):
     participants = get_guild_participants(self.guild_id)
     if self.target_uid in participants:
       participants[self.target_uid]["weapon"] = select.values[0]
+      select.values = []  # 連続選択できるように選択状態をリセット
       await refresh_panels_from_admin(interaction, self.guild_id)
       self.update_components()
       await interaction.response.edit_message(
-          content=f"⚙️ **{participants[self.target_uid]['name']}** の武器を **{select.values[0]}** に変更しました。（続けて他の変更も可能です）",
+          content=f"⚙️ **{participants[self.target_uid]['name']}** の武器を **{participants[self.target_uid]['weapon']}** に変更しました。（続けて他の変更も可能です）",
           view=self
       )
 
@@ -255,7 +257,6 @@ class AdminControlView(discord.ui.View):
 
   @discord.ui.button(label="✅ 完了（閉じる）", style=discord.ButtonStyle.green, custom_id="admin_done")
   async def admin_done(self, interaction: discord.Interaction, button: discord.ui.Button):
-    # 完了ボタンを押したら自分だけのポップアップ画面をまるごと削除する
     await interaction.response.defer()
     try:
       await interaction.delete_original_response()
@@ -336,6 +337,7 @@ class RegistrationView(discord.ui.View):
     else:
       participants[uid]["rank"] = select.values[0]
 
+    select.values = []  # 連続選択できるように選択状態をリセット
     await refresh_panels(interaction, guild_id)
 
   @discord.ui.select(
@@ -366,6 +368,7 @@ class RegistrationView(discord.ui.View):
     else:
       participants[uid]["weapon"] = select.values[0]
 
+    select.values = []  # 連続選択できるように選択状態をリセット
     await refresh_panels(interaction, guild_id)
 
   @discord.ui.button(
@@ -443,6 +446,8 @@ class RegistrationView(discord.ui.View):
     participants = get_guild_participants(guild_id)
 
     selected_val = select.values[0]
+    select.values = []  # 連続選択できるように選択状態をリセット
+    
     if selected_val == "none":
       await interaction.response.defer()
       return
@@ -474,10 +479,19 @@ class RegistrationView(discord.ui.View):
   ):
     guild_id = interaction.guild_id
     mode = select.values[0]
+    select.values = []  # ★ここを追加：同じモードを連続で選んでも再反応するように選択状態をリセット
     set_guild_mode(guild_id, mode)
     if not interaction.response.is_done():
       await interaction.response.defer()
     await execute_team_split(interaction.channel, mode)
+    
+    # 選択リセットを反映するためにビューを更新
+    if guild_id in panel_message_ids:
+      try:
+        ctrl_msg = await interaction.channel.fetch_message(panel_message_ids[guild_id])
+        await ctrl_msg.edit(view=self)
+      except (discord.NotFound, discord.HTTPException):
+        pass
 
 
 # --- 管理ポップアップからの更新用関数 ---
@@ -493,7 +507,6 @@ async def refresh_panels_from_admin(interaction: discord.Interaction, guild_id: 
   if guild_id in panel_message_ids:
     try:
       ctrl_msg = await interaction.channel.fetch_message(panel_message_ids[guild_id])
-      # 登録パネル側のセレクト選択肢（AFKメンバー一覧など）を更新するため
       new_reg_view = RegistrationView(guild_id, interaction.user.id)
       await ctrl_msg.edit(view=new_reg_view)
     except (discord.NotFound, discord.HTTPException):
