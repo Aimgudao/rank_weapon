@@ -153,6 +153,79 @@ def build_status_embeds(guild_id: int):
   return embeds
 
 
+# --- 管理・編集用モーダルクラス ---
+class AdminEditModal(discord.ui.Modal, title="参加者情報の管理・編集"):
+  def __init__(self, guild_id: int, target_uid: int, target_data: dict):
+    super().__init__()
+    self.guild_id = guild_id
+    self.target_uid = target_uid
+
+    self.rank_input = discord.ui.TextInput(
+        label="ランク (レインボー/クリムゾン/ダイヤ/プラチナ/ゴールド)",
+        default=target_data.get("rank", "ゴールド"),
+        max_length=10,
+    )
+    self.add_item(self.rank_input)
+
+    self.weapon_input = discord.ui.TextInput(
+        label="武器 (AR / SMG / Flex / SR)",
+        default=target_data.get("weapon", "AR"),
+        max_length=10,
+    )
+    self.add_item(self.weapon_input)
+
+    current_status = "AFK" if target_data.get("is_afk", False) else "Active"
+    self.afk_input = discord.ui.TextInput(
+        label="状態 (Active または AFK)",
+        default=current_status,
+        max_length=10,
+    )
+    self.add_item(self.afk_input)
+
+    current_ps = "ON" if target_data.get("is_ps", False) else "OFF"
+    self.ps_input = discord.ui.TextInput(
+        label="PS参加 (ON または OFF)",
+        default=current_ps,
+        max_length=5,
+    )
+    self.add_item(self.ps_input)
+
+  async def on_submit(self, interaction: discord.Interaction):
+    guild_id = self.guild_id
+    participants = get_guild_participants(guild_id)
+
+    if self.target_uid not in participants:
+      await interaction.response.send_message("対象のユーザーが見つかりませんでした。", ephemeral=True)
+      return
+
+    # 1. ランクの更新
+    new_rank = self.rank_input.value.strip()
+    if new_rank in RANKS:
+      participants[self.target_uid]["rank"] = new_rank
+
+    # 2. 武器の更新
+    new_weapon = self.weapon_input.value.strip()
+    if new_weapon in WEAPONS:
+      participants[self.target_uid]["weapon"] = new_weapon
+
+    # 3. Active / AFK の更新
+    new_afk = self.afk_input.value.strip()
+    if new_afk in ["AFK", "afk", "True", "true", "ＡＦＫ"]:
+      participants[self.target_uid]["is_afk"] = True
+    elif new_afk in ["Active", "active", "False", "false", "アクティブ"]:
+      participants[self.target_uid]["is_afk"] = False
+
+    # 4. PS参加の更新
+    new_ps = self.ps_input.value.strip()
+    if new_ps in ["ON", "on", "True", "true", "ＯＮ"]:
+      participants[self.target_uid]["is_ps"] = True
+    elif new_ps in ["OFF", "off", "False", "false", "ＯＦＦ"]:
+      participants[self.target_uid]["is_ps"] = False
+
+    await interaction.response.defer()
+    await refresh_panels(interaction, guild_id)
+
+
 # --- 動的にボタン状態や選択肢を調整するビュークラス（操作パネル用） ---
 class RegistrationView(discord.ui.View):
 
@@ -322,7 +395,7 @@ class RegistrationView(discord.ui.View):
     await refresh_panels(interaction, guild_id)
 
   @discord.ui.select(
-      placeholder="管理",
+      placeholder="管理 (メンバーを選択して編集)",
       options=[discord.SelectOption(label="登録者がいません", value="none")],
       custom_id="toggle_other_afk",
   )
@@ -339,10 +412,12 @@ class RegistrationView(discord.ui.View):
 
     target_uid = int(selected_val)
     if target_uid in participants:
-      participants[target_uid]["is_afk"] = not participants[target_uid]["is_afk"]
-      await refresh_panels(interaction, guild_id)
+      target_data = participants[target_uid]
+      # 選択されたユーザーの現在の設定が入ったモーダルを表示
+      modal = AdminEditModal(guild_id, target_uid, target_data)
+      await interaction.response.send_modal(modal)
     else:
-      await interaction.response.defer()
+      await interaction.response.send_message("対象ユーザーが存在しません。", ephemeral=True)
 
   @discord.ui.select(
       placeholder="チーム編成/再編成",
