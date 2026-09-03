@@ -29,7 +29,6 @@ WEAPONS = ["AR", "SMG", "Flex", "SR"]
 
 # --- データ管理用グローバル変数 ---
 participants_per_guild = {}
-temp_selections_per_guild = {}  # 未登録ユーザーの一時選択状態保持用
 priority_pool_per_guild = {}
 current_mode_per_guild = {}
 ps_notice_per_guild = {}  # サーバーごとのPS通知設定（デフォルトTrue: ON）
@@ -154,7 +153,7 @@ def build_status_embeds(guild_id: int):
   return embeds
 
 
-# --- 管理用インタラクティブビュー ---
+# --- 管理用インタラクティブビュー（完了ボタン付き） ---
 class AdminControlView(discord.ui.View):
   def __init__(self, guild_id: int, target_uid: int):
     super().__init__(timeout=180)
@@ -197,15 +196,13 @@ class AdminControlView(discord.ui.View):
       custom_id="admin_select_rank"
   )
   async def admin_select_rank(self, interaction: discord.Interaction, select: discord.ui.Select):
-    await interaction.response.defer(ephemeral=True)
     participants = get_guild_participants(self.guild_id)
     if self.target_uid in participants:
       participants[self.target_uid]["rank"] = select.values[0]
-      select.values = []
-      await refresh_panels(interaction, self.guild_id)
+      await refresh_panels_from_admin(interaction, self.guild_id)
       self.update_components()
-      await interaction.edit_original_response(
-          content=f"⚙️ **{participants[self.target_uid]['name']}** のランクを **{participants[self.target_uid]['rank']}** に変更しました。",
+      await interaction.response.edit_message(
+          content=f"⚙️ **{participants[self.target_uid]['name']}** のランクを **{select.values[0]}** に変更しました。（続けて他の変更も可能です）",
           view=self
       )
 
@@ -220,48 +217,45 @@ class AdminControlView(discord.ui.View):
       custom_id="admin_select_weapon"
   )
   async def admin_select_weapon(self, interaction: discord.Interaction, select: discord.ui.Select):
-    await interaction.response.defer(ephemeral=True)
     participants = get_guild_participants(self.guild_id)
     if self.target_uid in participants:
       participants[self.target_uid]["weapon"] = select.values[0]
-      select.values = []
-      await refresh_panels(interaction, self.guild_id)
+      await refresh_panels_from_admin(interaction, self.guild_id)
       self.update_components()
-      await interaction.edit_original_response(
-          content=f"⚙️ **{participants[self.target_uid]['name']}** の武器を **{participants[self.target_uid]['weapon']}** に変更しました。",
+      await interaction.response.edit_message(
+          content=f"⚙️ **{participants[self.target_uid]['name']}** の武器を **{select.values[0]}** に変更しました。（続けて他の変更も可能です）",
           view=self
       )
 
   @discord.ui.button(label="状態切替", style=discord.ButtonStyle.blurple, custom_id="admin_toggle_afk")
   async def admin_toggle_afk(self, interaction: discord.Interaction, button: discord.ui.Button):
-    await interaction.response.defer(ephemeral=True)
     participants = get_guild_participants(self.guild_id)
     if self.target_uid in participants:
       participants[self.target_uid]["is_afk"] = not participants[self.target_uid]["is_afk"]
       self.update_components()
-      await refresh_panels(interaction, self.guild_id)
+      await refresh_panels_from_admin(interaction, self.guild_id)
       status_str = "AFK" if participants[self.target_uid]["is_afk"] else "Active"
-      await interaction.edit_original_response(
-          content=f"⚙️ **{participants[self.target_uid]['name']}** の状態を **{status_str}** に変更しました。",
+      await interaction.response.edit_message(
+          content=f"⚙️ **{participants[self.target_uid]['name']}** の状態を **{status_str}** に変更しました。（続けて他の変更も可能です）",
           view=self
       )
 
   @discord.ui.button(label="PS参加切替", style=discord.ButtonStyle.gray, custom_id="admin_toggle_ps")
   async def admin_toggle_ps(self, interaction: discord.Interaction, button: discord.ui.Button):
-    await interaction.response.defer(ephemeral=True)
     participants = get_guild_participants(self.guild_id)
     if self.target_uid in participants:
       participants[self.target_uid]["is_ps"] = not participants[self.target_uid]["is_ps"]
       self.update_components()
-      await refresh_panels(interaction, self.guild_id)
+      await refresh_panels_from_admin(interaction, self.guild_id)
       ps_str = "ON" if participants[self.target_uid]["is_ps"] else "OFF"
-      await interaction.edit_original_response(
-          content=f"⚙️ **{participants[self.target_uid]['name']}** のPS参加を **{ps_str}** に変更しました。",
+      await interaction.response.edit_message(
+          content=f"⚙️ **{participants[self.target_uid]['name']}** のPS参加を **{ps_str}** に変更しました。（続けて他の変更も可能です）",
           view=self
       )
 
   @discord.ui.button(label="✅ 完了（閉じる）", style=discord.ButtonStyle.green, custom_id="admin_done")
   async def admin_done(self, interaction: discord.Interaction, button: discord.ui.Button):
+    # 完了ボタンを押したら自分だけのポップアップ画面をまるごと削除する
     await interaction.response.defer()
     try:
       await interaction.delete_original_response()
@@ -327,40 +321,22 @@ class RegistrationView(discord.ui.View):
   async def select_rank(
       self, interaction: discord.Interaction, select: discord.ui.Select
   ):
-    await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild_id
-    uid = interaction.user.id
-    selected_rank = select.values[0]
-    select.values = []
-
     participants = get_guild_participants(guild_id)
+    uid = interaction.user.id
 
-    if uid in participants:
-      participants[uid]["rank"] = selected_rank
-      await refresh_panels(interaction, guild_id)
-      await interaction.followup.send(f"ランクを **{selected_rank}** に変更しました。", ephemeral=True)
+    if uid not in participants:
+      participants[uid] = {
+          "name": interaction.user.display_name,
+          "rank": select.values[0],
+          "weapon": "AR",
+          "is_ps": False,
+          "is_afk": False,
+      }
     else:
-      if guild_id not in temp_selections_per_guild:
-        temp_selections_per_guild[guild_id] = {}
-      if uid not in temp_selections_per_guild[guild_id]:
-        temp_selections_per_guild[guild_id][uid] = {"rank": None, "weapon": None}
+      participants[uid]["rank"] = select.values[0]
 
-      temp_selections_per_guild[guild_id][uid]["rank"] = selected_rank
-      current_weapon = temp_selections_per_guild[guild_id][uid]["weapon"]
-
-      if current_weapon is not None:
-        participants[uid] = {
-            "name": interaction.user.display_name,
-            "rank": selected_rank,
-            "weapon": current_weapon,
-            "is_ps": False,
-            "is_afk": False,
-        }
-        del temp_selections_per_guild[guild_id][uid]
-        await refresh_panels(interaction, guild_id)
-        await interaction.followup.send("ランクと武器が揃ったため、参加登録が完了しました！", ephemeral=True)
-      else:
-        await interaction.followup.send(f"ランク（{selected_rank}）を記憶しました。次に**武器**を選択してください。", ephemeral=True)
+    await refresh_panels(interaction, guild_id)
 
   @discord.ui.select(
       placeholder="武器を選択",
@@ -375,40 +351,22 @@ class RegistrationView(discord.ui.View):
   async def select_weapon(
       self, interaction: discord.Interaction, select: discord.ui.Select
   ):
-    await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild_id
-    uid = interaction.user.id
-    selected_weapon = select.values[0]
-    select.values = []
-
     participants = get_guild_participants(guild_id)
+    uid = interaction.user.id
 
-    if uid in participants:
-      participants[uid]["weapon"] = selected_weapon
-      await refresh_panels(interaction, guild_id)
-      await interaction.followup.send(f"武器を **{selected_weapon}** に変更しました。", ephemeral=True)
+    if uid not in participants:
+      participants[uid] = {
+          "name": interaction.user.display_name,
+          "rank": "ゴールド",
+          "weapon": select.values[0],
+          "is_ps": False,
+          "is_afk": False,
+      }
     else:
-      if guild_id not in temp_selections_per_guild:
-        temp_selections_per_guild[guild_id] = {}
-      if uid not in temp_selections_per_guild[guild_id]:
-        temp_selections_per_guild[guild_id][uid] = {"rank": None, "weapon": None}
+      participants[uid]["weapon"] = select.values[0]
 
-      temp_selections_per_guild[guild_id][uid]["weapon"] = selected_weapon
-      current_rank = temp_selections_per_guild[guild_id][uid]["rank"]
-
-      if current_rank is not None:
-        participants[uid] = {
-            "name": interaction.user.display_name,
-            "rank": current_rank,
-            "weapon": selected_weapon,
-            "is_ps": False,
-            "is_afk": False,
-        }
-        del temp_selections_per_guild[guild_id][uid]
-        await refresh_panels(interaction, guild_id)
-        await interaction.followup.send("ランクと武器が揃ったため、参加登録が完了しました！", ephemeral=True)
-      else:
-        await interaction.followup.send(f"武器（{selected_weapon}）を記憶しました。次に**ランク**を選択してください。", ephemeral=True)
+    await refresh_panels(interaction, guild_id)
 
   @discord.ui.button(
       label="PlayStationで参加 (OFF)",
@@ -418,18 +376,22 @@ class RegistrationView(discord.ui.View):
   async def toggle_ps(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild_id
     participants = get_guild_participants(guild_id)
     uid = interaction.user.id
 
-    if uid in participants:
-      participants[uid]["is_ps"] = not participants[uid]["is_ps"]
-      await refresh_panels(interaction, guild_id)
-      ps_state = "ON" if participants[uid]["is_ps"] else "OFF"
-      await interaction.followup.send(f"PlayStation参加設定を **{ps_state}** に変更しました。", ephemeral=True)
+    if uid not in participants:
+      participants[uid] = {
+          "name": interaction.user.display_name,
+          "rank": "ゴールド",
+          "weapon": "AR",
+          "is_ps": True,
+          "is_afk": False,
+      }
     else:
-      await interaction.followup.send("先にランクと武器を選択して参加登録を完了させてください。", ephemeral=True)
+      participants[uid]["is_ps"] = not participants[uid]["is_ps"]
+
+    await refresh_panels(interaction, guild_id)
 
   @discord.ui.button(
       label="PS通知 (ON)",
@@ -439,7 +401,6 @@ class RegistrationView(discord.ui.View):
   async def toggle_ps_notice(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild_id
     current_status = get_guild_ps_notice(guild_id)
     set_guild_ps_notice(guild_id, not current_status)
@@ -453,18 +414,22 @@ class RegistrationView(discord.ui.View):
   async def toggle_afk(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild_id
     participants = get_guild_participants(guild_id)
     uid = interaction.user.id
 
     if uid in participants:
       participants[uid]["is_afk"] = not participants[uid]["is_afk"]
-      await refresh_panels(interaction, guild_id)
-      status_str = "AFK" if participants[uid]["is_afk"] else "Active"
-      await interaction.followup.send(f"状態を **{status_str}** に変更しました。", ephemeral=True)
     else:
-      await interaction.followup.send("先にランクと武器を選択して参加登録を完了させてください。", ephemeral=True)
+      participants[uid] = {
+          "name": interaction.user.display_name,
+          "rank": "ゴールド",
+          "weapon": "AR",
+          "is_ps": False,
+          "is_afk": True,
+      }
+
+    await refresh_panels(interaction, guild_id)
 
   @discord.ui.select(
       placeholder="管理 (メンバーを選択して編集)",
@@ -478,10 +443,8 @@ class RegistrationView(discord.ui.View):
     participants = get_guild_participants(guild_id)
 
     selected_val = select.values[0]
-    select.values = []
-    
     if selected_val == "none":
-      await interaction.response.defer(ephemeral=True)
+      await interaction.response.defer()
       return
 
     target_uid = int(selected_val)
@@ -489,7 +452,7 @@ class RegistrationView(discord.ui.View):
       target_data = participants[target_uid]
       view = AdminControlView(guild_id, target_uid)
       await interaction.response.send_message(
-          content=f"⚙️ **{target_data['name']}** の管理メニュー",
+          content=f"⚙️ **{target_data['name']}** の管理メニュー（あなただけに表示されています。変更後は下の **【✅ 完了（閉じる）】** ボタンを押してください）",
           view=view,
           ephemeral=True
       )
@@ -509,19 +472,16 @@ class RegistrationView(discord.ui.View):
   async def select_match_mode(
       self, interaction: discord.Interaction, select: discord.ui.Select
   ):
-    await interaction.response.defer(ephemeral=True)
-
     guild_id = interaction.guild_id
     mode = select.values[0]
-    select.values = []
     set_guild_mode(guild_id, mode)
-    
+    if not interaction.response.is_done():
+      await interaction.response.defer()
     await execute_team_split(interaction.channel, mode)
 
 
-# --- パネル全体を確実に再描画する共通関数 ---
-async def refresh_panels(interaction: discord.Interaction, guild_id: int):
-  # 1. ステータス・チーム結果メッセージの更新
+# --- 管理ポップアップからの更新用関数 ---
+async def refresh_panels_from_admin(interaction: discord.Interaction, guild_id: int):
   if guild_id in status_message_ids:
     try:
       msg_id = status_message_ids[guild_id]
@@ -530,14 +490,38 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
     except (discord.NotFound, discord.HTTPException):
       pass
 
-  # 2. 操作パネル（セレクトボックスのメンバー一覧なども含む）の更新
   if guild_id in panel_message_ids:
     try:
-      msg_id = panel_message_ids[guild_id]
-      ctrl_msg = await interaction.channel.fetch_message(msg_id)
-      new_view = RegistrationView(guild_id, interaction.user.id)
+      ctrl_msg = await interaction.channel.fetch_message(panel_message_ids[guild_id])
+      # 登録パネル側のセレクト選択肢（AFKメンバー一覧など）を更新するため
+      new_reg_view = RegistrationView(guild_id, interaction.user.id)
+      await ctrl_msg.edit(view=new_reg_view)
+    except (discord.NotFound, discord.HTTPException):
+      pass
+
+
+# --- パネル全体を更新する共通関数 ---
+async def refresh_panels(interaction: discord.Interaction, guild_id: int):
+  if guild_id in status_message_ids:
+    try:
+      msg_id = status_message_ids[guild_id]
+      status_msg = await interaction.channel.fetch_message(msg_id)
+      await status_msg.edit(embeds=build_status_embeds(guild_id))
+    except (discord.NotFound, discord.HTTPException):
+      pass
+
+  new_view = RegistrationView(guild_id, interaction.user.id)
+  if guild_id in panel_message_ids:
+    try:
+      ctrl_msg = await interaction.channel.fetch_message(panel_message_ids[guild_id])
       await ctrl_msg.edit(view=new_view)
     except (discord.NotFound, discord.HTTPException):
+      pass
+
+  if not interaction.response.is_done():
+    try:
+      await interaction.response.defer()
+    except discord.InteractionResponded:
       pass
 
 
@@ -689,8 +673,6 @@ async def cmd_custom_match(interaction: discord.Interaction):
 
   participants = get_guild_participants(guild_id)
   participants.clear()
-  if guild_id in temp_selections_per_guild:
-    temp_selections_per_guild[guild_id].clear()
   set_guild_priority(guild_id, [])
   if guild_id in latest_teams_per_guild:
     del latest_teams_per_guild[guild_id]
