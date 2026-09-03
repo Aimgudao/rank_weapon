@@ -153,7 +153,7 @@ def build_status_embeds(guild_id: int):
   return embeds
 
 
-# --- 管理用インタラクティブビュー（モーダルの代わりにポップアップでボタン・セレクトによる完全クリック操作を提供） ---
+# --- 管理用インタラクティブビュー（完全ボタン・セレクトによる非公開ポップアップ操作） ---
 class AdminControlView(discord.ui.View):
   def __init__(self, guild_id: int, target_uid: int):
     super().__init__(timeout=180)
@@ -167,7 +167,6 @@ class AdminControlView(discord.ui.View):
       return
     data = participants[self.target_uid]
 
-    # ボタンのラベルやスタイルを現在の状態に合わせる
     for child in self.children:
       if isinstance(child, discord.ui.Button):
         if child.custom_id == "admin_toggle_afk":
@@ -201,7 +200,7 @@ class AdminControlView(discord.ui.View):
     if self.target_uid in participants:
       participants[self.target_uid]["rank"] = select.values[0]
       await refresh_panels(interaction, self.guild_id)
-      await interaction.response.edit_message(content=f"**{participants[self.target_uid]['name']}** のランクを **{select.values[0]}** に変更しました。", view=self)
+      await interaction.response.edit_message(content=f"⚙️ **{participants[self.target_uid]['name']}** のランクを **{select.values[0]}** に変更しました。", view=self)
 
   @discord.ui.select(
       placeholder="武器を変更",
@@ -218,7 +217,7 @@ class AdminControlView(discord.ui.View):
     if self.target_uid in participants:
       participants[self.target_uid]["weapon"] = select.values[0]
       await refresh_panels(interaction, self.guild_id)
-      await interaction.response.edit_message(content=f"**{participants[self.target_uid]['name']}** の武器を **{select.values[0]}** に変更しました。", view=self)
+      await interaction.response.edit_message(content=f"⚙️ **{participants[self.target_uid]['name']}** の武器を **{select.values[0]}** に変更しました。", view=self)
 
   @discord.ui.button(label="状態切替", style=discord.ButtonStyle.blurple, custom_id="admin_toggle_afk")
   async def admin_toggle_afk(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -228,7 +227,7 @@ class AdminControlView(discord.ui.View):
       self.update_components()
       await refresh_panels(interaction, self.guild_id)
       status_str = "AFK" if participants[self.target_uid]["is_afk"] else "Active"
-      await interaction.response.edit_message(content=f"**{participants[self.target_uid]['name']}** の状態を **{status_str}** に変更しました。", view=self)
+      await interaction.response.edit_message(content=f"⚙️ **{participants[self.target_uid]['name']}** の状態を **{status_str}** に変更しました。", view=self)
 
   @discord.ui.button(label="PS参加切替", style=discord.ButtonStyle.gray, custom_id="admin_toggle_ps")
   async def admin_toggle_ps(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -238,10 +237,10 @@ class AdminControlView(discord.ui.View):
       self.update_components()
       await refresh_panels(interaction, self.guild_id)
       ps_str = "ON" if participants[self.target_uid]["is_ps"] else "OFF"
-      await interaction.response.edit_message(content=f"**{participants[self.target_uid]['name']}** のPS参加を **{ps_str}** に変更しました。", view=self)
+      await interaction.response.edit_message(content=f"⚙️ **{participants[self.target_uid]['name']}** のPS参加を **{ps_str}** に変更しました。", view=self)
 
 
-# --- 動的にボタン状態や選択肢を調整するビュークラス（操作パネル用） ---
+# --- 操作パネル用ビュークラス ---
 class RegistrationView(discord.ui.View):
 
   def __init__(self, guild_id: int = None, user_id: int = None):
@@ -428,10 +427,10 @@ class RegistrationView(discord.ui.View):
     target_uid = int(selected_val)
     if target_uid in participants:
       target_data = participants[target_uid]
-      # メンバーが選択されたら、文字入力を一切使わずクリックだけで全変更できる専用パネル（ephemeralメッセージ）を表示
+      # チャンネルを汚さない、本人だけにしか見えない非公開の管理ポップアップを表示
       view = AdminControlView(guild_id, target_uid)
       await interaction.response.send_message(
-          content=f"⚙️ **{target_data['name']}** の管理メニュー（ボタンやプルダウンをクリックして変更してください）",
+          content=f"⚙️ **{target_data['name']}** の管理メニュー（あなただけに表示されています。ボタンやプルダウンをクリックして変更してください）",
           view=view,
           ephemeral=True
       )
@@ -461,7 +460,6 @@ class RegistrationView(discord.ui.View):
 
 # --- パネル全体を更新する共通関数 ---
 async def refresh_panels(interaction: discord.Interaction, guild_id: int):
-  # 下側のステータス・結果パネルを更新
   if guild_id in status_message_ids:
     try:
       msg_id = status_message_ids[guild_id]
@@ -470,7 +468,6 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
     except (discord.NotFound, discord.HTTPException):
       pass
 
-  # 上側の操作パネルを更新
   new_view = RegistrationView(guild_id, interaction.user.id)
   if guild_id in panel_message_ids:
     try:
@@ -569,7 +566,6 @@ async def execute_team_split(channel, mode):
     except (discord.NotFound, discord.HTTPException):
       pass
 
-  # --- VCスマート検索＆移動処理 ---
   voice_channels = sorted(guild.voice_channels, key=lambda c: c.position)
   if len(voice_channels) < 2:
     return
@@ -619,7 +615,6 @@ async def execute_team_split(channel, mode):
 async def cmd_custom_match(interaction: discord.Interaction):
   guild_id = interaction.guild_id
   
-  # 過去の操作パネルを削除
   if guild_id in panel_message_ids:
     try:
       old_ctrl = await interaction.channel.fetch_message(panel_message_ids[guild_id])
@@ -627,7 +622,6 @@ async def cmd_custom_match(interaction: discord.Interaction):
     except (discord.NotFound, discord.HTTPException):
       pass
 
-  # 過去のステータスパネルを削除
   if guild_id in status_message_ids:
     try:
       old_msg = await interaction.channel.fetch_message(status_message_ids[guild_id])
@@ -635,7 +629,6 @@ async def cmd_custom_match(interaction: discord.Interaction):
     except (discord.NotFound, discord.HTTPException):
       pass
 
-  # データを完全にリセット
   participants = get_guild_participants(guild_id)
   participants.clear()
   set_guild_priority(guild_id, [])
@@ -644,12 +637,10 @@ async def cmd_custom_match(interaction: discord.Interaction):
 
   await interaction.response.defer(ephemeral=True)
 
-  # 1. 操作パネル（一番上）を送信
   view = RegistrationView(guild_id, interaction.user.id)
   control_msg = await interaction.channel.send(content="", view=view)
   panel_message_ids[guild_id] = control_msg.id
 
-  # 2. ステータス・結果パネル（その下）を送信
   status_embeds = build_status_embeds(guild_id)
   status_msg = await interaction.channel.send(embeds=status_embeds)
   status_message_ids[guild_id] = status_msg.id
