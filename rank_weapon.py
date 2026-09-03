@@ -196,14 +196,15 @@ class AdminControlView(discord.ui.View):
       custom_id="admin_select_rank"
   )
   async def admin_select_rank(self, interaction: discord.Interaction, select: discord.ui.Select):
+    await interaction.response.defer(ephemeral=True)
     participants = get_guild_participants(self.guild_id)
     if self.target_uid in participants:
       participants[self.target_uid]["rank"] = select.values[0]
-      select.values = []  # 連続選択できるように選択状態をリセット
+      select.values = []
       await refresh_panels_from_admin(interaction, self.guild_id)
       self.update_components()
-      await interaction.response.edit_message(
-          content=f"⚙️ **{participants[self.target_uid]['name']}** のランクを **{select.values[0] if select.values else participants[self.target_uid]['rank']}** に変更しました。（続けて他の変更も可能です）",
+      await interaction.edit_original_response(
+          content=f"⚙️ **{participants[self.target_uid]['name']}** のランクを **{participants[self.target_uid]['rank']}** に変更しました。",
           view=self
       )
 
@@ -218,40 +219,43 @@ class AdminControlView(discord.ui.View):
       custom_id="admin_select_weapon"
   )
   async def admin_select_weapon(self, interaction: discord.Interaction, select: discord.ui.Select):
+    await interaction.response.defer(ephemeral=True)
     participants = get_guild_participants(self.guild_id)
     if self.target_uid in participants:
       participants[self.target_uid]["weapon"] = select.values[0]
-      select.values = []  # 連続選択できるように選択状態をリセット
+      select.values = []
       await refresh_panels_from_admin(interaction, self.guild_id)
       self.update_components()
-      await interaction.response.edit_message(
-          content=f"⚙️ **{participants[self.target_uid]['name']}** の武器を **{participants[self.target_uid]['weapon']}** に変更しました。（続けて他の変更も可能です）",
+      await interaction.edit_original_response(
+          content=f"⚙️ **{participants[self.target_uid]['name']}** の武器を **{participants[self.target_uid]['weapon']}** に変更しました。",
           view=self
       )
 
   @discord.ui.button(label="状態切替", style=discord.ButtonStyle.blurple, custom_id="admin_toggle_afk")
   async def admin_toggle_afk(self, interaction: discord.Interaction, button: discord.ui.Button):
+    await interaction.response.defer(ephemeral=True)
     participants = get_guild_participants(self.guild_id)
     if self.target_uid in participants:
       participants[self.target_uid]["is_afk"] = not participants[self.target_uid]["is_afk"]
       self.update_components()
       await refresh_panels_from_admin(interaction, self.guild_id)
       status_str = "AFK" if participants[self.target_uid]["is_afk"] else "Active"
-      await interaction.response.edit_message(
-          content=f"⚙️ **{participants[self.target_uid]['name']}** の状態を **{status_str}** に変更しました。（続けて他の変更も可能です）",
+      await interaction.edit_original_response(
+          content=f"⚙️ **{participants[self.target_uid]['name']}** の状態を **{status_str}** に変更しました。",
           view=self
       )
 
   @discord.ui.button(label="PS参加切替", style=discord.ButtonStyle.gray, custom_id="admin_toggle_ps")
   async def admin_toggle_ps(self, interaction: discord.Interaction, button: discord.ui.Button):
+    await interaction.response.defer(ephemeral=True)
     participants = get_guild_participants(self.guild_id)
     if self.target_uid in participants:
       participants[self.target_uid]["is_ps"] = not participants[self.target_uid]["is_ps"]
       self.update_components()
       await refresh_panels_from_admin(interaction, self.guild_id)
       ps_str = "ON" if participants[self.target_uid]["is_ps"] else "OFF"
-      await interaction.response.edit_message(
-          content=f"⚙️ **{participants[self.target_uid]['name']}** のPS参加を **{ps_str}** に変更しました。（続けて他の変更も可能です）",
+      await interaction.edit_original_response(
+          content=f"⚙️ **{participants[self.target_uid]['name']}** のPS参加を **{ps_str}** に変更しました。",
           view=self
       )
 
@@ -322,6 +326,8 @@ class RegistrationView(discord.ui.View):
   async def select_rank(
       self, interaction: discord.Interaction, select: discord.ui.Select
   ):
+    # ★即座に応答してカクつきをなくす
+    await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild_id
     participants = get_guild_participants(guild_id)
     uid = interaction.user.id
@@ -337,7 +343,7 @@ class RegistrationView(discord.ui.View):
     else:
       participants[uid]["rank"] = select.values[0]
 
-    select.values = []  # 連続選択できるように選択状態をリセット
+    select.values = []
     await refresh_panels(interaction, guild_id)
 
   @discord.ui.select(
@@ -353,6 +359,8 @@ class RegistrationView(discord.ui.View):
   async def select_weapon(
       self, interaction: discord.Interaction, select: discord.ui.Select
   ):
+    # ★即座に応答してカクつきをなくす
+    await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild_id
     participants = get_guild_participants(guild_id)
     uid = interaction.user.id
@@ -368,7 +376,7 @@ class RegistrationView(discord.ui.View):
     else:
       participants[uid]["weapon"] = select.values[0]
 
-    select.values = []  # 連続選択できるように選択状態をリセット
+    select.values = []
     await refresh_panels(interaction, guild_id)
 
   @discord.ui.button(
@@ -379,6 +387,7 @@ class RegistrationView(discord.ui.View):
   async def toggle_ps(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
+    await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild_id
     participants = get_guild_participants(guild_id)
     uid = interaction.user.id
@@ -404,6 +413,7 @@ class RegistrationView(discord.ui.View):
   async def toggle_ps_notice(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
+    await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild_id
     current_status = get_guild_ps_notice(guild_id)
     set_guild_ps_notice(guild_id, not current_status)
@@ -417,6 +427,7 @@ class RegistrationView(discord.ui.View):
   async def toggle_afk(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
+    await interaction.response.defer(ephemeral=True)
     guild_id = interaction.guild_id
     participants = get_guild_participants(guild_id)
     uid = interaction.user.id
@@ -446,10 +457,10 @@ class RegistrationView(discord.ui.View):
     participants = get_guild_participants(guild_id)
 
     selected_val = select.values[0]
-    select.values = []  # 連続選択できるように選択状態をリセット
+    select.values = []
     
     if selected_val == "none":
-      await interaction.response.defer()
+      await interaction.response.defer(ephemeral=True)
       return
 
     target_uid = int(selected_val)
@@ -457,7 +468,7 @@ class RegistrationView(discord.ui.View):
       target_data = participants[target_uid]
       view = AdminControlView(guild_id, target_uid)
       await interaction.response.send_message(
-          content=f"⚙️ **{target_data['name']}** の管理メニュー（あなただけに表示されています。変更後は下の **【✅ 完了（閉じる）】** ボタンを押してください）",
+          content=f"⚙️ **{target_data['name']}** の管理メニュー",
           view=view,
           ephemeral=True
       )
@@ -477,15 +488,15 @@ class RegistrationView(discord.ui.View):
   async def select_match_mode(
       self, interaction: discord.Interaction, select: discord.ui.Select
   ):
+    await interaction.response.defer(ephemeral=True)
+
     guild_id = interaction.guild_id
     mode = select.values[0]
-    select.values = []  # ★ここを追加：同じモードを連続で選んでも再反応するように選択状態をリセット
+    select.values = []
     set_guild_mode(guild_id, mode)
-    if not interaction.response.is_done():
-      await interaction.response.defer()
+    
     await execute_team_split(interaction.channel, mode)
     
-    # 選択リセットを反映するためにビューを更新
     if guild_id in panel_message_ids:
       try:
         ctrl_msg = await interaction.channel.fetch_message(panel_message_ids[guild_id])
@@ -529,12 +540,6 @@ async def refresh_panels(interaction: discord.Interaction, guild_id: int):
       ctrl_msg = await interaction.channel.fetch_message(panel_message_ids[guild_id])
       await ctrl_msg.edit(view=new_view)
     except (discord.NotFound, discord.HTTPException):
-      pass
-
-  if not interaction.response.is_done():
-    try:
-      await interaction.response.defer()
-    except discord.InteractionResponded:
       pass
 
 
