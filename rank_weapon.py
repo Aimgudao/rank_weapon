@@ -153,7 +153,7 @@ def build_status_embeds(guild_id: int):
   return embeds
 
 
-# --- 管理用インタラクティブビュー（完全ボタン・セレクトによる非公開ポップアップ操作） ---
+# --- 管理用インタラクティブビュー（完了ボタン付き） ---
 class AdminControlView(discord.ui.View):
   def __init__(self, guild_id: int, target_uid: int):
     super().__init__(timeout=180)
@@ -199,8 +199,12 @@ class AdminControlView(discord.ui.View):
     participants = get_guild_participants(self.guild_id)
     if self.target_uid in participants:
       participants[self.target_uid]["rank"] = select.values[0]
-      await refresh_panels(interaction, self.guild_id)
-      await interaction.response.edit_message(content=f"⚙️ **{participants[self.target_uid]['name']}** のランクを **{select.values[0]}** に変更しました。", view=self)
+      await refresh_panels_from_admin(interaction, self.guild_id)
+      self.update_components()
+      await interaction.response.edit_message(
+          content=f"⚙️ **{participants[self.target_uid]['name']}** のランクを **{select.values[0]}** に変更しました。（続けて他の変更も可能です）",
+          view=self
+      )
 
   @discord.ui.select(
       placeholder="武器を変更",
@@ -216,8 +220,12 @@ class AdminControlView(discord.ui.View):
     participants = get_guild_participants(self.guild_id)
     if self.target_uid in participants:
       participants[self.target_uid]["weapon"] = select.values[0]
-      await refresh_panels(interaction, self.guild_id)
-      await interaction.response.edit_message(content=f"⚙️ **{participants[self.target_uid]['name']}** の武器を **{select.values[0]}** に変更しました。", view=self)
+      await refresh_panels_from_admin(interaction, self.guild_id)
+      self.update_components()
+      await interaction.response.edit_message(
+          content=f"⚙️ **{participants[self.target_uid]['name']}** の武器を **{select.values[0]}** に変更しました。（続けて他の変更も可能です）",
+          view=self
+      )
 
   @discord.ui.button(label="状態切替", style=discord.ButtonStyle.blurple, custom_id="admin_toggle_afk")
   async def admin_toggle_afk(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -225,9 +233,12 @@ class AdminControlView(discord.ui.View):
     if self.target_uid in participants:
       participants[self.target_uid]["is_afk"] = not participants[self.target_uid]["is_afk"]
       self.update_components()
-      await refresh_panels(interaction, self.guild_id)
+      await refresh_panels_from_admin(interaction, self.guild_id)
       status_str = "AFK" if participants[self.target_uid]["is_afk"] else "Active"
-      await interaction.response.edit_message(content=f"⚙️ **{participants[self.target_uid]['name']}** の状態を **{status_str}** に変更しました。", view=self)
+      await interaction.response.edit_message(
+          content=f"⚙️ **{participants[self.target_uid]['name']}** の状態を **{status_str}** に変更しました。（続けて他の変更も可能です）",
+          view=self
+      )
 
   @discord.ui.button(label="PS参加切替", style=discord.ButtonStyle.gray, custom_id="admin_toggle_ps")
   async def admin_toggle_ps(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -235,9 +246,21 @@ class AdminControlView(discord.ui.View):
     if self.target_uid in participants:
       participants[self.target_uid]["is_ps"] = not participants[self.target_uid]["is_ps"]
       self.update_components()
-      await refresh_panels(interaction, self.guild_id)
+      await refresh_panels_from_admin(interaction, self.guild_id)
       ps_str = "ON" if participants[self.target_uid]["is_ps"] else "OFF"
-      await interaction.response.edit_message(content=f"⚙️ **{participants[self.target_uid]['name']}** のPS参加を **{ps_str}** に変更しました。", view=self)
+      await interaction.response.edit_message(
+          content=f"⚙️ **{participants[self.target_uid]['name']}** のPS参加を **{ps_str}** に変更しました。（続けて他の変更も可能です）",
+          view=self
+      )
+
+  @discord.ui.button(label="✅ 完了（閉じる）", style=discord.ButtonStyle.green, custom_id="admin_done")
+  async def admin_done(self, interaction: discord.Interaction, button: discord.ui.Button):
+    # 完了ボタンを押したら自分だけのポップアップ画面をまるごと削除する
+    await interaction.response.defer()
+    try:
+      await interaction.delete_original_response()
+    except discord.HTTPException:
+      pass
 
 
 # --- 操作パネル用ビュークラス ---
@@ -427,10 +450,9 @@ class RegistrationView(discord.ui.View):
     target_uid = int(selected_val)
     if target_uid in participants:
       target_data = participants[target_uid]
-      # チャンネルを汚さない、本人だけにしか見えない非公開の管理ポップアップを表示
       view = AdminControlView(guild_id, target_uid)
       await interaction.response.send_message(
-          content=f"⚙️ **{target_data['name']}** の管理メニュー（あなただけに表示されています。ボタンやプルダウンをクリックして変更してください）",
+          content=f"⚙️ **{target_data['name']}** の管理メニュー（あなただけに表示されています。変更後は下の **【✅ 完了（閉じる）】** ボタンを押してください）",
           view=view,
           ephemeral=True
       )
@@ -456,6 +478,26 @@ class RegistrationView(discord.ui.View):
     if not interaction.response.is_done():
       await interaction.response.defer()
     await execute_team_split(interaction.channel, mode)
+
+
+# --- 管理ポップアップからの更新用関数 ---
+async def refresh_panels_from_admin(interaction: discord.Interaction, guild_id: int):
+  if guild_id in status_message_ids:
+    try:
+      msg_id = status_message_ids[guild_id]
+      status_msg = await interaction.channel.fetch_message(msg_id)
+      await status_msg.edit(embeds=build_status_embeds(guild_id))
+    except (discord.NotFound, discord.HTTPException):
+      pass
+
+  if guild_id in panel_message_ids:
+    try:
+      ctrl_msg = await interaction.channel.fetch_message(panel_message_ids[guild_id])
+      # 登録パネル側のセレクト選択肢（AFKメンバー一覧など）を更新するため
+      new_reg_view = RegistrationView(guild_id, interaction.user.id)
+      await ctrl_msg.edit(view=new_reg_view)
+    except (discord.NotFound, discord.HTTPException):
+      pass
 
 
 # --- パネル全体を更新する共通関数 ---
